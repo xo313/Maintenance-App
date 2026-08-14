@@ -1,0 +1,28 @@
+{
+  "settings": {
+    "id": 1,
+    "base_capital": 0,
+    "shop_name": "مركز الصيانة"
+  },
+  "technicians": [
+    {
+      "id": 2,
+      "name": "خالد عمر",
+      "profit_percentage": 0.5,
+      "start_balance": 0,
+      "is_active": false
+    }
+  ],
+  "operations": [],
+  "withdrawals": [],
+  "months": [
+    {
+      "id": 1,
+      "month_name": "أغسطس ٢٠٢٦",
+      "start_capital": 0,
+      "is_closed": false,
+      "created_at": "2026-08-13T19:40:33.854Z",
+      "closed_at": null
+    }
+  ]
+}
