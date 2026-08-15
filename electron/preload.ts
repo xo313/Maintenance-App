@@ -3,7 +3,7 @@ import type { Operation, Withdrawal } from '../src/types';
 
 contextBridge.exposeInMainWorld('api', {
   getSettings: () => ipcRenderer.invoke('get-settings'),
-  updateSettings: (capital: number, name: string) => ipcRenderer.invoke('update-settings', capital, name),
+  updateSettings: (settings: any) => ipcRenderer.invoke('update-settings', settings),
   
   getTechnicians: () => ipcRenderer.invoke('get-technicians'),
   addTechnician: (name: string, profit_percentage: number) => ipcRenderer.invoke('add-technician', name, profit_percentage),
@@ -15,6 +15,7 @@ contextBridge.exposeInMainWorld('api', {
   editOperation: (id: number, op: Partial<Operation>) => ipcRenderer.invoke('edit-operation', id, op),
   deleteOperation: (id: number) => ipcRenderer.invoke('delete-operation', id),
   importOperationsExcel: () => ipcRenderer.invoke('import-operations-excel'),
+  importOperationsExcelData: (data: any[]) => ipcRenderer.invoke('import-operations-excel-data', data),
   getDebts: () => ipcRenderer.invoke('get-debts'),
   payDebt: (id: number) => ipcRenderer.invoke('pay-debt', id),
   
@@ -28,6 +29,7 @@ contextBridge.exposeInMainWorld('api', {
   editIcCompatibility: (id: number, ic: any) => ipcRenderer.invoke('edit-ic-compatibility', id, ic),
   deleteIcCompatibility: (id: number) => ipcRenderer.invoke('delete-ic-compatibility', id),
   importIcExcel: () => ipcRenderer.invoke('import-ic-excel'),
+  importIcExcelData: (data: any[]) => ipcRenderer.invoke('import-ic-excel-data', data),
 
   // Scrap Devices
   getScrapDevices: () => ipcRenderer.invoke('get-scrap-devices'),
@@ -43,5 +45,9 @@ contextBridge.exposeInMainWorld('api', {
   getDashboardStats: () => ipcRenderer.invoke('get-dashboard-stats'),
   getTechnicianStats: () => ipcRenderer.invoke('get-technician-stats'),
   closeMonth: (newCapital: number) => ipcRenderer.invoke('close-month', newCapital),
-  closeMonthWithExcel: (newCapital: number) => ipcRenderer.invoke('close-month-with-excel', newCapital)
+  closeMonthWithExcel: (newCapital: number) => ipcRenderer.invoke('close-month-with-excel', newCapital),
+  
+  // Backup & Reset
+  getAllOperations: () => ipcRenderer.invoke('get-all-operations'),
+  factoryReset: () => ipcRenderer.invoke('factory-reset')
 });

@@ -11,7 +11,7 @@
       "id": 1,
       "name": "حسين",
       "profit_percentage": 0.7,
-      "is_active": false,
+      "is_active": true,
       "start_balance": 0
     }
   ],

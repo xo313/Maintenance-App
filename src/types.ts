@@ -1,3 +1,11 @@
+export interface Settings {
+  id: number;
+  base_capital: number;
+  shop_name: string;
+  whatsapp_template?: string;
+  theme?: 'light' | 'dark';
+}
+
 export interface Month {
   id: number;
   month_name: string;

@@ -9,7 +9,13 @@ const dbPath = isDev
 
 class SimpleDB {
   data: any = {
-    settings: { id: 1, base_capital: 0, shop_name: 'مركز الصيانة' },
+    settings: { 
+      id: 1, 
+      base_capital: 0, 
+      shop_name: 'مركز الصيانة',
+      whatsapp_template: 'السلام عليكم [اسم_الزبون] 👋\nنود إعلامك بأن جهازك ([اسم_الجهاز]) قد تمت صيانته وهو جاهز للاستلام.\nالمبلغ المطلوب: [المبلغ] دينار.\nشكراً لاختيارك مركزنا! 🛠️✨',
+      theme: 'dark'
+    },
     months: [], // { id, month_name, start_capital, is_closed, created_at, closed_at }
     technicians: [],
     operations: [], // Added: payment_status, month_id
@@ -41,6 +47,14 @@ class SimpleDB {
           created_at: new Date().toISOString(),
           closed_at: null
         });
+      }
+      
+      // Ensure settings have new fields
+      if (!this.data.settings.whatsapp_template) {
+        this.data.settings.whatsapp_template = 'السلام عليكم [اسم_الزبون] 👋\nنود إعلامك بأن جهازك ([اسم_الجهاز]) قد تمت صيانته وهو جاهز للاستلام.\nالمبلغ المطلوب: [المبلغ] دينار.\nشكراً لاختيارك مركزنا! 🛠️✨';
+      }
+      if (!this.data.settings.theme) {
+        this.data.settings.theme = 'dark';
       }
 
       const currentMonthId = this.getCurrentMonth().id;
@@ -74,13 +88,59 @@ class SimpleDB {
       if (!this.data.common_faults) {
         this.data.common_faults = [];
       }
+      
+      // Auto-merge new seed data for existing users
+      const seedPath = path.join(app.getAppPath(), 'default_seed.json');
+      if (fs.existsSync(seedPath)) {
+        try {
+          const seedData = JSON.parse(fs.readFileSync(seedPath, 'utf8'));
+          
+          if (seedData.common_devices) {
+             const existingDevices = new Set(this.data.common_devices.map((d: string) => d.toLowerCase()));
+             for (const d of seedData.common_devices) {
+                if (!existingDevices.has(d.toLowerCase())) {
+                   this.data.common_devices.push(d);
+                   existingDevices.add(d.toLowerCase());
+                }
+             }
+          }
+          
+          if (seedData.ic_compatibilities) {
+             const seenIcs = new Set(this.data.ic_compatibilities.map((ic: any) => 
+               `${ic.ic_number}-${ic.component_type}-${ic.compatible_devices}`.toLowerCase()
+             ));
+             
+             let nextId = Date.now();
+             for (const seedIC of seedData.ic_compatibilities) {
+                const key = `${seedIC.ic_number}-${seedIC.component_type}-${seedIC.compatible_devices}`.toLowerCase();
+                if (!seenIcs.has(key)) {
+                  seedIC.id = nextId++;
+                  this.data.ic_compatibilities.push(seedIC);
+                  seenIcs.add(key);
+                }
+             }
+          }
+        } catch (e) {
+          console.error("Failed to merge default_seed.json", e);
+        }
+      }
+
       this.save();
     } else {
       // First time init
+      const seedPath = path.join(app.getAppPath(), 'default_seed.json');
+      if (fs.existsSync(seedPath)) {
+        try {
+          this.data = JSON.parse(fs.readFileSync(seedPath, 'utf8'));
+        } catch (e) {
+          console.error("Failed to parse default_seed.json", e);
+        }
+      }
+      
       this.data.months = [{
         id: 1,
         month_name: new Date().toLocaleDateString('ar-EG', { month: 'long', year: 'numeric' }),
-        start_capital: 0,
+        start_capital: this.data.settings?.base_capital || 0,
         is_closed: false,
         created_at: new Date().toISOString(),
         closed_at: null

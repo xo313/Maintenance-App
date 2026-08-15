@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
+import * as xlsx from 'xlsx';
 import { Edit, Trash2, PlusCircle, PenTool, CheckCircle2, ChevronRight, ChevronLeft, MessageCircle } from "lucide-react";
 import type { Operation, Technician } from "../types";
 
@@ -9,6 +10,8 @@ export default function Operations() {
   // Quick Lists
   const [quickDevices, setQuickDevices] = useState<string[]>([]);
   const [quickFaults, setQuickFaults] = useState<string[]>([]);
+
+  const [settings, setSettings] = useState<any>(null);
 
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
@@ -43,10 +46,12 @@ export default function Operations() {
     const ops = await (window as any).api.getOperations();
     const techs = await (window as any).api.getTechnicians();
     const qLists = await (window as any).api.getQuickLists();
+    const sets = await (window as any).api.getSettings();
     setOperations(ops);
     setTechnicians(techs);
     setQuickDevices(qLists.devices || []);
     setQuickFaults(qLists.faults || []);
+    setSettings(sets);
   };
 
   useEffect(() => {
@@ -157,14 +162,28 @@ export default function Operations() {
     loadData();
   };
 
-  const handleImportExcel = async () => {
-    const res = await (window as any).api.importOperationsExcel();
-    if (res.success) {
-      alert(`تم استيراد ${res.added} سجلات بنجاح، وتم تجاهل ${res.ignored} سجلات مكررة.`);
-      loadData();
-    } else if (res.reason !== 'cancelled') {
-      alert('حدث خطأ أثناء الاستيراد: ' + res.message);
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const buffer = await file.arrayBuffer();
+      const workbook = xlsx.read(buffer, { type: 'array' });
+      const sheetName = workbook.SheetNames[0];
+      const worksheet = workbook.Sheets[sheetName];
+      const data = xlsx.utils.sheet_to_json(worksheet, { header: 1 });
+
+      const res = await (window as any).api.importOperationsExcelData(data);
+      if (res.success) {
+        alert(`تم استيراد ${res.added} سجلات بنجاح، وتم تجاهل ${res.ignored} سجلات مكررة.`);
+        loadData();
+      } else {
+        alert('حدث خطأ أثناء الاستيراد: ' + res.message);
+      }
+    } catch (err: any) {
+      alert('حدث خطأ في قراءة الملف: ' + err.message);
     }
+    e.target.value = '';
   };
 
   const formatPhoneNumber = (phone: string) => {
@@ -183,10 +202,14 @@ export default function Operations() {
       return;
     }
 
-    const text = `السلام عليكم ${op.customer_name || 'عميلنا العزيز'}
-نود إعلامك بأن جهازك (${op.device || '-'}) قد تمت صيانته بنجاح وهو جاهز للاستلام الآن.
-تكلفة الصيانة : ${op.price || 0}
-نسعد بزيارتك لاستلامه في أقرب وقت. شكراً لثقتك بـ مركز Google!`;
+    let text = settings?.whatsapp_template || `السلام عليكم [اسم_الزبون]
+نود إعلامك بأن جهازك ([اسم_الجهاز]) قد تمت صيانته وهو جاهز للاستلام.
+المبلغ المطلوب: [المبلغ] دينار.
+شكراً لاختيارك مركزنا!`;
+
+    text = text.replace(/\[اسم_الزبون\]/g, op.customer_name || 'عميلنا العزيز');
+    text = text.replace(/\[اسم_الجهاز\]/g, op.device || '-');
+    text = text.replace(/\[المبلغ\]/g, op.price ? op.price.toString() : '0');
 
     const encodedMessage = encodeURIComponent(text);
     const url = `https://wa.me/${formattedPhone}?text=${encodedMessage}`;
@@ -203,9 +226,10 @@ export default function Operations() {
           العمليات والصيانة
         </h2>
         <div style={{ display: 'flex', gap: '1rem' }}>
-          <button className="btn" onClick={handleImportExcel} style={{ background: 'var(--success-bg)', color: 'var(--success)', borderColor: 'var(--success-bg)' }}>
+          <label className="btn" style={{ background: 'var(--success-bg)', color: 'var(--success)', borderColor: 'var(--success-bg)', cursor: 'pointer', margin: 0 }}>
             استيراد من إكسل
-          </button>
+            <input type="file" accept=".xlsx, .xls" style={{ display: 'none' }} onChange={handleFileUpload} />
+          </label>
         </div>
       </div>
 

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import * as xlsx from 'xlsx';
 import { Search, Plus, Edit, Trash2, Cpu, FileUp, ChevronRight, ChevronLeft, PackageSearch, Box } from 'lucide-react';
 import type { IcCompatibility, ScrapDevice } from '../types';
 
@@ -130,14 +131,28 @@ export default function CompatibilitySearch() {
     }
   };
 
-  const handleImportExcel = async () => {
-    const res = await (window as any).api.importIcExcel();
-    if (res.success) {
-      alert(`تم الانتهاء! إضافة ${res.added} آيسي جديد، تحديث ${res.updated} آيسي موجود (بأجهزة جديدة)، وتجاهل ${res.ignored} سجل مكرر تماماً.`);
-      loadData();
-    } else if (res.reason !== 'cancelled') {
-      alert('حدث خطأ أثناء الاستيراد: ' + res.message);
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const buffer = await file.arrayBuffer();
+      const workbook = xlsx.read(buffer, { type: 'array' });
+      const sheetName = workbook.SheetNames[0];
+      const worksheet = workbook.Sheets[sheetName];
+      const data = xlsx.utils.sheet_to_json(worksheet, { header: 1 });
+
+      const res = await (window as any).api.importIcExcelData(data);
+      if (res.success) {
+        alert(`تم الانتهاء! إضافة ${res.added} آيسي جديد، تحديث ${res.updated} آيسي موجود (بأجهزة جديدة)، وتجاهل ${res.ignored} سجل مكرر تماماً.`);
+        loadData();
+      } else {
+        alert('حدث خطأ أثناء الاستيراد: ' + res.message);
+      }
+    } catch (err: any) {
+      alert('حدث خطأ في قراءة الملف: ' + err.message);
     }
+    e.target.value = '';
   };
 
   const closeModal = () => {
@@ -223,9 +238,10 @@ export default function CompatibilitySearch() {
           <button className="btn" onClick={() => setIsScrapModalOpen(true)} style={{ background: 'var(--primary-light)', color: 'var(--primary)', borderColor: 'var(--primary-light)' }}>
             <PackageSearch size={20} /> إدارة مخزن التفصيخ
           </button>
-          <button className="btn" onClick={handleImportExcel} style={{ background: 'var(--success-bg)', color: 'var(--success)', borderColor: 'var(--success-bg)' }}>
+          <label className="btn" style={{ background: 'var(--success-bg)', color: 'var(--success)', borderColor: 'var(--success-bg)', cursor: 'pointer', margin: 0 }}>
             <FileUp size={20} /> استيراد إكسل
-          </button>
+            <input type="file" accept=".xlsx, .xls" style={{ display: 'none' }} onChange={handleFileUpload} />
+          </label>
           <button className="btn btn-primary" onClick={() => setIsModalOpen(true)}>
             <Plus size={20} /> إضافة مكون
           </button>

@@ -22,8 +22,11 @@ function createWindow() {
     titleBarOverlay: {
       color: '#0f172a',
       symbolColor: '#f8fafc',
-    }
+    },
+    autoHideMenuBar: true
   });
+
+  mainWindow.setMenuBarVisibility(false);
 
   mainWindow.maximize();
 
@@ -144,9 +147,8 @@ function setupIPC() {
     return db.data.settings;
   });
   
-  ipcMain.handle('update-settings', (_, capital, name) => {
-    db.data.settings.base_capital = capital;
-    db.data.settings.shop_name = name;
+  ipcMain.handle('update-settings', (_, settings) => {
+    db.data.settings = { ...db.data.settings, ...settings };
     db.save();
     return true;
   });
@@ -186,10 +188,19 @@ function setupIPC() {
 
   // Operations
   ipcMain.handle('get-operations', () => {
+    return db.data.operations
+      .filter((op: any) => op.month_id === getCurrentMonth().id)
+      .map((op:any) => {
+        const tech = db.data.technicians.find((t:any) => t.id === op.technician_id);
+        return { ...op, technician_name: tech ? tech.name : 'Unknown' };
+      }).reverse(); 
+  });
+
+  ipcMain.handle('get-all-operations', () => {
     return db.data.operations.map((op:any) => {
       const tech = db.data.technicians.find((t:any) => t.id === op.technician_id);
       return { ...op, technician_name: tech ? tech.name : 'Unknown' };
-    }).reverse(); 
+    }).reverse();
   });
 
   ipcMain.handle('add-operation', (_, op) => {
@@ -425,6 +436,61 @@ function setupIPC() {
     db.save();
     return true;
   });
+
+  ipcMain.handle('import-operations-excel-data', async (_, data: any[]) => {
+    try {
+      let added = 0;
+      let ignored = 0;
+      let maxId = db.data.operations.reduce((max: number, op: any) => Math.max(max, op.id), 0);
+      const currentMonth = getCurrentMonth();
+
+      for (let i = 1; i < data.length; i++) {
+        const row = data[i] as any[];
+        if (!row || row.length < 3) continue;
+
+        const date = row[0] ? String(row[0]).trim() : new Date().toLocaleDateString('en-GB');
+        const opId = row[1] ? Number(row[1]) : null;
+        const customerName = String(row[2] || '').trim();
+        const device = String(row[3] || '').trim();
+        
+        const techName = String(row[10] || '').trim();
+        let tech = db.data.technicians.find((t: any) => t.name === techName);
+        let techId = tech ? tech.id : (db.data.technicians[0]?.id || 1);
+        
+        const isDuplicate = db.data.operations.some((op: any) => 
+          (opId && op.id === opId) || 
+          (op.customer_name === customerName && op.device === device && op.date === date)
+        );
+
+        if (isDuplicate) {
+          ignored++;
+          continue;
+        }
+
+        maxId = opId && opId > maxId ? opId : maxId + 1;
+
+        db.data.operations.push({
+          id: maxId,
+          date: date,
+          month_id: currentMonth.id,
+          customer_name: customerName,
+          device: device,
+          payment_status: String(row[4]).includes('دين') ? 'debt' : 'cash',
+          cost: Number(row[5]) || 0,
+          price: Number(row[6]) || 0,
+          shop_profit: Number(row[8]) || 0,
+          tech_profit: Number(row[9]) || 0,
+          technician_id: techId
+        });
+        added++;
+      }
+
+      db.save();
+      return { success: true, added, ignored };
+    } catch (err: any) {
+      return { success: false, reason: 'error', message: err.message };
+    }
+  });
   ipcMain.handle('import-operations-excel', async () => {
     const { canceled, filePaths } = await dialog.showOpenDialog({
       title: 'استيراد ملف إكسل للعمليات',
@@ -496,6 +562,66 @@ function setupIPC() {
   });
 
 
+  ipcMain.handle('import-ic-excel-data', async (_, data: any[]) => {
+    try {
+      let added = 0;
+      let updated = 0;
+      let ignored = 0;
+      if (!db.data.ic_compatibilities) db.data.ic_compatibilities = [];
+      let maxId = db.data.ic_compatibilities.reduce((max: number, ic: any) => Math.max(max, ic.id), 0);
+
+      // Process rows: assume standard Category, IC, Devices format
+      // Skip header row
+      for (let i = 1; i < data.length; i++) {
+        const row = data[i] as any[];
+        if (!row || row.length < 2) continue;
+        
+        const category = row[0] ? String(row[0]).trim() : 'General';
+        const icCode = String(row[1]).trim();
+        const devicesStr = row[2] ? String(row[2]).trim() : '';
+        
+        if (!icCode) continue;
+
+        const existingIdx = db.data.ic_compatibilities.findIndex((ic: any) => String(ic.ic_number || '').toLowerCase() === icCode.toLowerCase());
+        
+        if (existingIdx !== -1) {
+          const existingDevices = String(db.data.ic_compatibilities[existingIdx].compatible_devices || '').split(/[,=]/).map((d:string) => d.trim()).filter(Boolean);
+          const newDevices = String(devicesStr || '').split(/[,=]/).map((d:string) => d.trim()).filter(Boolean);
+          
+          const deviceMap = new Map<string, string>();
+          [...existingDevices, ...newDevices].forEach(d => {
+            deviceMap.set(d.toLowerCase(), d);
+          });
+          const uniqueDevices = Array.from(deviceMap.values());
+          
+          if (uniqueDevices.length > existingDevices.length) {
+            // New devices were found
+            db.data.ic_compatibilities[existingIdx].compatible_devices = uniqueDevices.join(' = ');
+            updated++;
+          } else {
+            // All devices already exist
+            ignored++;
+          }
+        } else {
+          maxId++;
+          db.data.ic_compatibilities.unshift({
+            id: maxId,
+            ic_number: icCode,
+            component_type: category,
+            compatible_devices: String(devicesStr || '').split(/[,=]/).map(d => d.trim()).filter(Boolean).join(' = '),
+            notes: ''
+          });
+          added++;
+        }
+      }
+
+      db.save();
+      return { success: true, added, updated, ignored };
+    } catch (err: any) {
+      return { success: false, reason: 'error', message: err.message };
+    }
+  });
+
   ipcMain.handle('import-ic-excel', async () => {
     const { canceled, filePaths } = await dialog.showOpenDialog({
       title: 'استيراد ملف إكسل للآيسيات',
@@ -531,14 +657,11 @@ function setupIPC() {
         
         if (!icCode) continue;
 
-        const existingIdx = db.data.ic_compatibilities.findIndex((ic: any) => ic.ic_number.toLowerCase() === icCode.toLowerCase());
+        const existingIdx = db.data.ic_compatibilities.findIndex((ic: any) => String(ic.ic_number || '').toLowerCase() === icCode.toLowerCase());
         
         if (existingIdx !== -1) {
-          // Merge devices logic
-          // Split by typical separators like '=' or ',' or '-'. The user data seems to use '=' or just words. Let's use a regex to split by common separators if needed, or just '=' based on current data.
-          // Let's use '=' and ',' for safety
-          const existingDevices = db.data.ic_compatibilities[existingIdx].compatible_devices.split(/[,=]/).map((d:string) => d.trim()).filter(Boolean);
-          const newDevices = devicesStr.split(/[,=]/).map((d:string) => d.trim()).filter(Boolean);
+          const existingDevices = String(db.data.ic_compatibilities[existingIdx].compatible_devices || '').split(/[,=]/).map((d:string) => d.trim()).filter(Boolean);
+          const newDevices = String(devicesStr || '').split(/[,=]/).map((d:string) => d.trim()).filter(Boolean);
           
           const deviceMap = new Map<string, string>();
           [...existingDevices, ...newDevices].forEach(d => {
@@ -555,14 +678,12 @@ function setupIPC() {
             ignored++;
           }
         } else {
-          // Add new
           maxId++;
           db.data.ic_compatibilities.unshift({
             id: maxId,
             ic_number: icCode,
             component_type: category,
-            // Sanitize separator to uniform ' = '
-            compatible_devices: devicesStr.split(/[,=]/).map(d => d.trim()).filter(Boolean).join(' = '),
+            compatible_devices: String(devicesStr || '').split(/[,=]/).map(d => d.trim()).filter(Boolean).join(' = '),
             notes: ''
           });
           added++;
@@ -758,5 +879,28 @@ function setupIPC() {
       return true;
     }
     return false;
+  });
+
+  ipcMain.handle('factory-reset', () => {
+    db.data.operations = [];
+    db.data.withdrawals = [];
+    
+    if (db.data.technicians) {
+      db.data.technicians.forEach((t: any) => {
+        t.start_balance = 0;
+      });
+    }
+
+    db.data.months = [{
+      id: 1,
+      month_name: new Date().toLocaleDateString('ar-EG', { month: 'long', year: 'numeric' }),
+      start_capital: db.data.settings.base_capital || 0,
+      is_closed: false,
+      created_at: new Date().toISOString(),
+      closed_at: null
+    }];
+    
+    db.save();
+    return true;
   });
 }

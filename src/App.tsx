@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Home, Wrench, Wallet, Settings, Cpu, Activity } from 'lucide-react';
 import Dashboard from './components/Dashboard';
 import Operations from './components/Operations';
@@ -9,6 +9,18 @@ import './index.css';
 
 function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
+  const [shopName, setShopName] = useState('مركز الصيانة');
+
+  useEffect(() => {
+    (window as any).api.getSettings().then((settings: any) => {
+      if (settings?.shop_name) setShopName(settings.shop_name);
+      if (settings?.theme === 'light') {
+        document.documentElement.classList.add('light');
+      } else {
+        document.documentElement.classList.remove('light');
+      }
+    });
+  }, []);
 
   const renderContent = () => {
     switch(activeTab) {
@@ -28,7 +40,7 @@ function App() {
           <div className="sidebar-logo-icon">
             <Activity size={24} color="#fff" />
           </div>
-          <h1>مركز الصيانة</h1>
+          <h1>{shopName}</h1>
         </div>
         
         <div 
