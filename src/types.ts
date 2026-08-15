@@ -19,6 +19,7 @@ export interface Operation {
   id: number;
   date: string;
   customer_name: string;
+  customer_phone?: string;
   device: string;
   cost: number;
   price: number;
@@ -66,4 +67,19 @@ export interface TechnicianStats {
   unrealizedProfit: number; // Tech's share of UNPAID debts
   totalWithdrawal: number;
   remainingBalance: number;
+}
+
+export interface IcCompatibility {
+  id: number;
+  ic_number: string;
+  component_type: string;
+  compatible_devices: string;
+  notes?: string;
+}
+
+export interface ScrapDevice {
+  id: number;
+  device_name: string;
+  device_model?: string;
+  quantity: number;
 }

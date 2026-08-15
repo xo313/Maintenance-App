@@ -13,7 +13,11 @@ class SimpleDB {
     months: [], // { id, month_name, start_capital, is_closed, created_at, closed_at }
     technicians: [],
     operations: [], // Added: payment_status, month_id
-    withdrawals: [] // Added: month_id
+    withdrawals: [], // Added: month_id
+    ic_compatibilities: [],
+    scrap_devices: [],
+    common_devices: [],
+    common_faults: []
   };
 
   constructor() {
@@ -57,6 +61,18 @@ class SimpleDB {
           if (t.start_balance === undefined) t.start_balance = 0;
           if (t.is_active === undefined) t.is_active = true;
         });
+      }
+      if (!this.data.ic_compatibilities) {
+        this.data.ic_compatibilities = [];
+      }
+      if (!this.data.scrap_devices) {
+        this.data.scrap_devices = [];
+      }
+      if (!this.data.common_devices) {
+        this.data.common_devices = [];
+      }
+      if (!this.data.common_faults) {
+        this.data.common_faults = [];
       }
       this.save();
     } else {

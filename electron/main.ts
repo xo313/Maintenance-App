@@ -327,7 +327,6 @@ function setupIPC() {
     
     const realizedShopProfit = cashOps.reduce((sum: number, op: any) => sum + (op.shop_profit || 0), 0) +
                                paidDebts.reduce((sum: number, op: any) => sum + (op.shop_profit || 0), 0);
-    const unrealizedShopProfit = totalShopProfit - realizedShopProfit; // roughly, within this month
 
     // Capital Revolving Logic
     const tiedCapital = unpaidDebts.reduce((sum: number, op: any) => sum + (op.cost || 0), 0);
@@ -339,27 +338,26 @@ function setupIPC() {
       .filter((w:any) => w.type === 'shop_withdrawal')
       .reduce((sum: number, w: any) => sum + (w.amount || 0), 0);
 
-    // Calculate Actual Box (Physical Cash)
-    const cashOpsPrice = cashOps.reduce((sum: number, op: any) => sum + (op.price || 0), 0);
-    const paidDebtsThisMonthPrice = paidDebts.reduce((sum: number, op: any) => sum + (op.price || 0), 0);
-
-    const totalOpsCost = currentMonthOps.reduce((sum: number, op: any) => sum + (op.cost || 0), 0);
-    const totalAllWithdrawals = currentMonthWithdrawals.reduce((sum: number, w: any) => sum + (w.amount || 0), 0);
-
-    const actualShopBalance = currentMonth.start_capital + cashOpsPrice + paidDebtsThisMonthPrice - totalOpsCost - totalAllWithdrawals;
-
+    // EXACT EQUATIONS FROM USER:
+    // 1. cashBox = start_capital + realizedShopProfit - totalShopWithdrawal
+    const cashBox = currentMonth.start_capital + realizedShopProfit - totalShopWithdrawal;
+    // 2. shopDue = availableCapital + totalShopProfit
+    const shopDue = availableCapital + totalShopProfit;
+    // 3. totalProfit = totalShopProfit
+    // 4. debtTotal = unpaidDebts.reduce(sum of prices)
     const debtTotal = unpaidDebts.reduce((sum: number, op: any) => sum + (op.price || 0), 0);
 
     return {
+      cashBox,
+      shopDue,
+      totalProfit: totalShopProfit,
+      debtTotal,
+      // For compatibility if modal still uses them:
       baseCapital: currentMonth.start_capital,
-      availableCapital,
       tiedCapital,
-      totalShopProfit,
+      availableCapital,
       realizedShopProfit,
-      unrealizedShopProfit,
-      totalShopWithdrawal,
-      actualShopBalance,
-      debtTotal
+      totalShopWithdrawal
     };
   });
 
@@ -397,6 +395,185 @@ function setupIPC() {
           remainingBalance: realizedProfit - techWithdrawal
         };
       });
+  });
+
+  // IC Compatibilities
+  ipcMain.handle('get-ic-compatibilities', () => {
+    return db.data.ic_compatibilities || [];
+  });
+  
+  ipcMain.handle('add-ic-compatibility', (_, ic) => {
+    const newIc = { ...ic, id: Date.now() };
+    if (!db.data.ic_compatibilities) db.data.ic_compatibilities = [];
+    db.data.ic_compatibilities.unshift(newIc);
+    db.save();
+    return true;
+  });
+
+  ipcMain.handle('edit-ic-compatibility', (_, id, ic) => {
+    const idx = db.data.ic_compatibilities.findIndex((i:any) => i.id === id);
+    if (idx !== -1) {
+      db.data.ic_compatibilities[idx] = { ...db.data.ic_compatibilities[idx], ...ic };
+      db.save();
+      return true;
+    }
+    return false;
+  });
+
+  ipcMain.handle('delete-ic-compatibility', (_, id) => {
+    db.data.ic_compatibilities = db.data.ic_compatibilities.filter((i:any) => i.id !== id);
+    db.save();
+    return true;
+  });
+  ipcMain.handle('import-operations-excel', async () => {
+    const { canceled, filePaths } = await dialog.showOpenDialog({
+      title: 'استيراد ملف إكسل للعمليات',
+      properties: ['openFile'],
+      filters: [{ name: 'Excel Files', extensions: ['xlsx', 'xls'] }]
+    });
+
+    if (canceled || filePaths.length === 0) {
+      return { success: false, reason: 'cancelled' };
+    }
+
+    try {
+      const workbook = xlsx.readFile(filePaths[0]);
+      const sheetName = workbook.SheetNames[0];
+      const worksheet = workbook.Sheets[sheetName];
+      const data = xlsx.utils.sheet_to_json(worksheet, { header: 1 });
+
+      let added = 0;
+      let ignored = 0;
+      let maxId = db.data.operations.reduce((max: number, op: any) => Math.max(max, op.id), 0);
+      const currentMonth = getCurrentMonth();
+
+      for (let i = 1; i < data.length; i++) {
+        const row = data[i] as any[];
+        if (!row || row.length < 3) continue;
+
+        const date = row[0] ? String(row[0]).trim() : new Date().toLocaleDateString('en-GB');
+        const opId = row[1] ? Number(row[1]) : null;
+        const customerName = String(row[2] || '').trim();
+        const device = String(row[3] || '').trim();
+        
+        const techName = String(row[10] || '').trim();
+        let tech = db.data.technicians.find((t: any) => t.name === techName);
+        let techId = tech ? tech.id : (db.data.technicians[0]?.id || 1);
+        
+        const isDuplicate = db.data.operations.some((op: any) => 
+          (opId && op.id === opId) || 
+          (op.customer_name === customerName && op.device === device && op.date === date)
+        );
+
+        if (isDuplicate) {
+          ignored++;
+          continue;
+        }
+
+        maxId = opId && opId > maxId ? opId : maxId + 1;
+
+        db.data.operations.push({
+          id: maxId,
+          date: date,
+          month_id: currentMonth.id,
+          customer_name: customerName,
+          device: device,
+          payment_status: String(row[4]).includes('دين') ? 'debt' : 'cash',
+          cost: Number(row[5]) || 0,
+          price: Number(row[6]) || 0,
+          shop_profit: Number(row[8]) || 0,
+          tech_profit: Number(row[9]) || 0,
+          technician_id: techId
+        });
+        added++;
+      }
+
+      db.save();
+      return { success: true, added, ignored };
+    } catch (err: any) {
+      return { success: false, reason: 'error', message: err.message };
+    }
+  });
+
+
+  ipcMain.handle('import-ic-excel', async () => {
+    const { canceled, filePaths } = await dialog.showOpenDialog({
+      title: 'استيراد ملف إكسل للآيسيات',
+      properties: ['openFile'],
+      filters: [{ name: 'Excel Files', extensions: ['xlsx', 'xls'] }]
+    });
+
+    if (canceled || filePaths.length === 0) {
+      return { success: false, reason: 'cancelled' };
+    }
+
+    try {
+      const workbook = xlsx.readFile(filePaths[0]);
+      const sheetName = workbook.SheetNames[0];
+      const worksheet = workbook.Sheets[sheetName];
+      const data = xlsx.utils.sheet_to_json(worksheet, { header: 1 });
+
+      let added = 0;
+      let updated = 0;
+      let ignored = 0;
+      if (!db.data.ic_compatibilities) db.data.ic_compatibilities = [];
+      let maxId = db.data.ic_compatibilities.reduce((max: number, ic: any) => Math.max(max, ic.id), 0);
+
+      // Process rows: assume standard Category, IC, Devices format
+      // Skip header row
+      for (let i = 1; i < data.length; i++) {
+        const row = data[i] as any[];
+        if (!row || row.length < 2) continue;
+        
+        const category = row[0] ? String(row[0]).trim() : 'General';
+        const icCode = String(row[1]).trim();
+        const devicesStr = row[2] ? String(row[2]).trim() : '';
+        
+        if (!icCode) continue;
+
+        const existingIdx = db.data.ic_compatibilities.findIndex((ic: any) => ic.ic_number.toLowerCase() === icCode.toLowerCase());
+        
+        if (existingIdx !== -1) {
+          // Merge devices logic
+          // Split by typical separators like '=' or ',' or '-'. The user data seems to use '=' or just words. Let's use a regex to split by common separators if needed, or just '=' based on current data.
+          // Let's use '=' and ',' for safety
+          const existingDevices = db.data.ic_compatibilities[existingIdx].compatible_devices.split(/[,=]/).map((d:string) => d.trim()).filter(Boolean);
+          const newDevices = devicesStr.split(/[,=]/).map((d:string) => d.trim()).filter(Boolean);
+          
+          const deviceMap = new Map<string, string>();
+          [...existingDevices, ...newDevices].forEach(d => {
+            deviceMap.set(d.toLowerCase(), d);
+          });
+          const uniqueDevices = Array.from(deviceMap.values());
+          
+          if (uniqueDevices.length > existingDevices.length) {
+            // New devices were found
+            db.data.ic_compatibilities[existingIdx].compatible_devices = uniqueDevices.join(' = ');
+            updated++;
+          } else {
+            // All devices already exist
+            ignored++;
+          }
+        } else {
+          // Add new
+          maxId++;
+          db.data.ic_compatibilities.unshift({
+            id: maxId,
+            ic_number: icCode,
+            component_type: category,
+            // Sanitize separator to uniform ' = '
+            compatible_devices: devicesStr.split(/[,=]/).map(d => d.trim()).filter(Boolean).join(' = '),
+            notes: ''
+          });
+          added++;
+        }
+      }
+
+      db.save();
+      return { success: true, added, updated, ignored };
+    } catch (err: any) {
+      return { success: false, reason: 'error', message: err.message };
+    }
   });
 
   // Monthly Settlement
@@ -519,5 +696,67 @@ function setupIPC() {
 
     db.save();
     return { success: true };
+  });
+
+  // Scrap Devices
+  ipcMain.handle('get-scrap-devices', () => {
+    return db.data.scrap_devices || [];
+  });
+
+  ipcMain.handle('add-scrap-device', (_, data) => {
+    if (!db.data.scrap_devices) db.data.scrap_devices = [];
+    const newId = db.data.scrap_devices.length > 0 ? Math.max(...db.data.scrap_devices.map((d:any) => d.id)) + 1 : 1;
+    db.data.scrap_devices.push({ id: newId, ...data });
+    db.save();
+    return true;
+  });
+
+  ipcMain.handle('edit-scrap-device', (_, id, data) => {
+    const idx = db.data.scrap_devices.findIndex((d:any) => d.id === id);
+    if (idx !== -1) {
+      db.data.scrap_devices[idx] = { ...db.data.scrap_devices[idx], ...data };
+      db.save();
+      return true;
+    }
+    return false;
+  });
+
+  ipcMain.handle('delete-scrap-device', (_, id) => {
+    const idx = db.data.scrap_devices.findIndex((d:any) => d.id === id);
+    if (idx !== -1) {
+      db.data.scrap_devices.splice(idx, 1);
+      db.save();
+      return true;
+    }
+    return false;
+  });
+
+  // Quick Lists
+  ipcMain.handle('get-quick-lists', () => {
+    return {
+      devices: db.data.common_devices || [],
+      faults: db.data.common_faults || []
+    };
+  });
+
+  ipcMain.handle('add-quick-list-item', (_, type: 'device' | 'fault', item: string) => {
+    const targetArray = type === 'device' ? 'common_devices' : 'common_faults';
+    if (!db.data[targetArray]) db.data[targetArray] = [];
+    if (!db.data[targetArray].includes(item)) {
+      db.data[targetArray].push(item);
+      db.save();
+      return true;
+    }
+    return false;
+  });
+
+  ipcMain.handle('remove-quick-list-item', (_, type: 'device' | 'fault', item: string) => {
+    const targetArray = type === 'device' ? 'common_devices' : 'common_faults';
+    if (db.data[targetArray]) {
+      db.data[targetArray] = db.data[targetArray].filter((i: string) => i !== item);
+      db.save();
+      return true;
+    }
+    return false;
   });
 }

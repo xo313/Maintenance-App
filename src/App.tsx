@@ -1,9 +1,10 @@
 import { useState } from 'react';
-import { Home, Wrench, Wallet, Users, Settings } from 'lucide-react';
+import { Home, Wrench, Wallet, Settings, Cpu, Activity } from 'lucide-react';
 import Dashboard from './components/Dashboard';
 import Operations from './components/Operations';
 import Withdrawals from './components/Withdrawals';
-import Technicians from './components/Technicians';
+import SettingsScreen from './components/Settings';
+import CompatibilitySearch from './components/CompatibilitySearch';
 import './index.css';
 
 function App() {
@@ -14,15 +15,21 @@ function App() {
       case 'dashboard': return <Dashboard />;
       case 'operations': return <Operations />;
       case 'withdrawals': return <Withdrawals />;
-      case 'technicians': return <Technicians />;
+      case 'compatibilities': return <CompatibilitySearch />;
+      case 'settings': return <SettingsScreen />;
       default: return <Dashboard />;
     }
   };
 
   return (
-    <div className="app-container" dir="rtl">
-      <div className="sidebar glass">
-        <h1>مركز الصيانة</h1>
+    <div className="app-container fade-in" dir="rtl">
+      <div className="sidebar">
+        <div className="sidebar-logo">
+          <div className="sidebar-logo-icon">
+            <Activity size={24} color="#fff" />
+          </div>
+          <h1>مركز الصيانة</h1>
+        </div>
         
         <div 
           className={`nav-item ${activeTab === 'dashboard' ? 'active' : ''}`}
@@ -47,13 +54,23 @@ function App() {
           <Wallet size={20} />
           <span>السحوبات والمصروفات</span>
         </div>
-        
+
         <div 
-          className={`nav-item ${activeTab === 'technicians' ? 'active' : ''}`}
-          onClick={() => setActiveTab('technicians')}
+          className={`nav-item ${activeTab === 'compatibilities' ? 'active' : ''}`}
+          onClick={() => setActiveTab('compatibilities')}
         >
-          <Users size={20} />
-          <span>حسابات الفنيين</span>
+          <Cpu size={20} />
+          <span>دليل التوافق</span>
+        </div>
+        
+        <div style={{ marginTop: 'auto', paddingTop: '2rem', borderTop: '1px solid var(--border-color)' }}>
+          <div 
+            className={`nav-item ${activeTab === 'settings' ? 'active' : ''}`} 
+            onClick={() => setActiveTab('settings')}
+          >
+            <Settings size={20} />
+            <span>الإعدادات</span>
+          </div>
         </div>
       </div>
 
