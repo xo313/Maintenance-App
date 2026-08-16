@@ -473,8 +473,8 @@ function setupIPC() {
     try {
       let added = 0;
       let ignored = 0;
-      let maxId = db.data.operations.reduce((max: number, op: any) => Math.max(max, op.id), 0);
       const currentMonth = getCurrentMonth();
+      let currentTimestamp = Date.now();
 
       for (let i = 1; i < data.length; i++) {
         const row = data[i] as any[];
@@ -499,19 +499,20 @@ function setupIPC() {
           continue;
         }
 
-        maxId = opId && opId > maxId ? opId : maxId + 1;
+        const safeId = (opId && !db.data.operations.some((o:any)=>o.id === opId)) ? opId : currentTimestamp++;
 
         db.data.operations.push({
-          id: maxId,
+          id: safeId,
           date: date,
           month_id: currentMonth.id,
           customer_name: customerName,
           device: device,
+          status: 'delivered', // Added default status
           payment_status: String(row[4]).includes('دين') ? 'debt' : 'cash',
-          cost: Number(row[5]) || 0,
-          price: Number(row[6]) || 0,
-          shop_profit: Number(row[8]) || 0,
-          tech_profit: Number(row[9]) || 0,
+          cost: Math.max(0, Number(row[5]) || 0),
+          price: Math.max(0, Number(row[6]) || 0),
+          shop_profit: Math.max(0, Number(row[8]) || 0),
+          tech_profit: Math.max(0, Number(row[9]) || 0),
           technician_id: techId
         });
         added++;
@@ -542,8 +543,8 @@ function setupIPC() {
 
       let added = 0;
       let ignored = 0;
-      let maxId = db.data.operations.reduce((max: number, op: any) => Math.max(max, op.id), 0);
       const currentMonth = getCurrentMonth();
+      let currentTimestamp = Date.now();
 
       for (let i = 1; i < data.length; i++) {
         const row = data[i] as any[];
@@ -568,19 +569,20 @@ function setupIPC() {
           continue;
         }
 
-        maxId = opId && opId > maxId ? opId : maxId + 1;
+        const safeId = (opId && !db.data.operations.some((o:any)=>o.id === opId)) ? opId : currentTimestamp++;
 
         db.data.operations.push({
-          id: maxId,
+          id: safeId,
           date: date,
           month_id: currentMonth.id,
           customer_name: customerName,
           device: device,
+          status: 'delivered', // Added default status
           payment_status: String(row[4]).includes('دين') ? 'debt' : 'cash',
-          cost: Number(row[5]) || 0,
-          price: Number(row[6]) || 0,
-          shop_profit: Number(row[8]) || 0,
-          tech_profit: Number(row[9]) || 0,
+          cost: Math.max(0, Number(row[5]) || 0),
+          price: Math.max(0, Number(row[6]) || 0),
+          shop_profit: Math.max(0, Number(row[8]) || 0),
+          tech_profit: Math.max(0, Number(row[9]) || 0),
           technician_id: techId
         });
         added++;
