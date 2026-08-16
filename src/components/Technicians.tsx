@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { TechnicianStats } from "../types";
+import { useDialog } from './ui/DialogProvider';
 
 export default function Technicians() {
   const [technicians, setTechnicians] = useState<TechnicianStats[]>([]);
@@ -16,6 +17,8 @@ export default function Technicians() {
   // Withdrawal state
   const [withdrawalTech, setWithdrawalTech] = useState<TechnicianStats | null>(null);
   const [withdrawalAmount, setWithdrawalAmount] = useState('');
+  
+  const dialog = useDialog();
 
   const loadData = async () => {
     const stats = await (window as any).api.getTechnicianStats();
@@ -32,7 +35,7 @@ export default function Technicians() {
     
     const res = await (window as any).api.addTechnician(name, parseFloat(profitPercentage) / 100);
     if (res && res.success === false) {
-      alert('حدث خطأ: ' + (res.reason || 'فشل الحفظ'));
+      await dialog.error(res.reason || 'فشل الحفظ');
       return;
     }
     setName('');
@@ -55,7 +58,7 @@ export default function Technicians() {
       parseFloat(editProfit) / 100
     );
     if (res && res.success === false) {
-      alert('حدث خطأ: ' + (res.reason || 'فشل الحفظ'));
+      await dialog.error(res.reason || 'فشل الحفظ');
       return;
     }
     setEditingTech(null);
@@ -78,7 +81,7 @@ export default function Technicians() {
       amount: parseFloat(withdrawalAmount)
     });
     if (res && res.success === false) {
-      alert('حدث خطأ: ' + (res.reason || 'فشل الحفظ'));
+      await dialog.error(res.reason || 'فشل الحفظ');
       return;
     }
 
@@ -165,10 +168,11 @@ export default function Technicians() {
                   className="btn" 
                   style={{ padding: '0.3rem 0.6rem', fontSize: '0.8rem', background: 'transparent', color: 'var(--danger)', border: '1px solid var(--danger)' }}
                   onClick={async () => {
-                    if (confirm('هل أنت متأكد من حذف هذا الفني؟')) {
+                    const confirmed = await dialog.confirm('هل أنت متأكد من حذف هذا الفني؟', 'تأكيد الحذف', true);
+                    if (confirmed) {
                       const res = await (window as any).api.deleteTechnician(t.id);
                       if (res && res.success === false) {
-                        alert('حدث خطأ: ' + (res.reason || 'فشل الحذف'));
+                        await dialog.error(res.reason || 'فشل الحذف');
                         return;
                       }
                       loadData();

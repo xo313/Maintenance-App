@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, Trash2, Smartphone, Wrench } from 'lucide-react';
+import { useDialog } from './ui/DialogProvider';
 
 export default function QuickLists() {
   const [devices, setDevices] = useState<string[]>([]);
@@ -7,6 +8,7 @@ export default function QuickLists() {
   
   const [newDevice, setNewDevice] = useState('');
   const [newFault, setNewFault] = useState('');
+  const dialog = useDialog();
 
   const loadLists = async () => {
     const data = await (window as any).api.getQuickLists();
@@ -23,7 +25,7 @@ export default function QuickLists() {
     if (!newDevice.trim()) return;
     const res = await (window as any).api.addQuickListItem('device', newDevice.trim());
     if (res && res.success === false) {
-      alert('حدث خطأ: ' + (res.reason || 'فشل الحفظ'));
+      await dialog.error(res.reason || 'فشل الحفظ');
       return;
     }
     setNewDevice('');
@@ -35,7 +37,7 @@ export default function QuickLists() {
     if (!newFault.trim()) return;
     const res = await (window as any).api.addQuickListItem('fault', newFault.trim());
     if (res && res.success === false) {
-      alert('حدث خطأ: ' + (res.reason || 'فشل الحفظ'));
+      await dialog.error(res.reason || 'فشل الحفظ');
       return;
     }
     setNewFault('');
@@ -43,10 +45,11 @@ export default function QuickLists() {
   };
 
   const handleRemoveDevice = async (item: string) => {
-    if (confirm(`هل أنت متأكد من حذف "${item}"؟`)) {
+    const confirmed = await dialog.confirm(`هل أنت متأكد من حذف "${item}"؟`, 'تأكيد الحذف', true);
+    if (confirmed) {
       const res = await (window as any).api.removeQuickListItem('device', item);
       if (res && res.success === false) {
-        alert('حدث خطأ: ' + (res.reason || 'فشل الحذف'));
+        await dialog.error(res.reason || 'فشل الحذف');
         return;
       }
       loadLists();
@@ -54,10 +57,11 @@ export default function QuickLists() {
   };
 
   const handleRemoveFault = async (item: string) => {
-    if (confirm(`هل أنت متأكد من حذف "${item}"؟`)) {
+    const confirmed = await dialog.confirm(`هل أنت متأكد من حذف "${item}"؟`, 'تأكيد الحذف', true);
+    if (confirmed) {
       const res = await (window as any).api.removeQuickListItem('fault', item);
       if (res && res.success === false) {
-        alert('حدث خطأ: ' + (res.reason || 'فشل الحذف'));
+        await dialog.error(res.reason || 'فشل الحذف');
         return;
       }
       loadLists();

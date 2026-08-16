@@ -1,13 +1,14 @@
 import { useEffect, useState } from 'react';
 import { Wallet, Banknote, TrendingUp, AlertTriangle, FileText, CheckCircle2 } from 'lucide-react';
 import type { DashboardStats, Operation } from '../types';
+import { useDialog } from './ui/DialogProvider';
 
 export default function Dashboard() {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [debts, setDebts] = useState<Operation[]>([]);
   const [newCapital, setNewCapital] = useState<string>('');
   const [showSettlementModal, setShowSettlementModal] = useState(false);
-  const [isClosing, setIsClosing] = useState(false);
+  const dialog = useDialog();
 
   const loadData = async () => {
     const data = await (window as any).api.getDashboardStats();
@@ -21,12 +22,12 @@ export default function Dashboard() {
   }, []);
 
   const handlePayDebt = async (id: number) => {
-    const ok = confirm("هل أنت متأكد من سداد هذا الدين؟");
+    const ok = await dialog.confirm("هل أنت متأكد من سداد هذا الدين؟", "تأكيد السداد");
     if (!ok) return;
     
     const res = await (window as any).api.payDebt(id);
     if (res && res.success === false) {
-      alert('حدث خطأ: ' + (res.reason || 'فشل السداد'));
+      await dialog.error(res.reason || 'فشل السداد');
       return;
     }
     loadData();
@@ -34,28 +35,25 @@ export default function Dashboard() {
 
   const confirmCloseMonth = async () => {
     if (!newCapital) {
-      alert('الرجاء إدخال رأس المال للشهر الجديد قبل التصفية');
+      await dialog.warning('الرجاء إدخال رأس المال للشهر الجديد قبل التصفية');
       return;
     }
     
-    if (isClosing) return;
-    setIsClosing(true);
-
+    dialog.loading('جاري التصفية وإنشاء ملف الإكسل والنسخة الاحتياطية...');
     const res = await (window as any).api.closeMonthWithExcel(parseFloat(newCapital));
     
     if (res.success) {
-      alert('تم حفظ النسخة الاحتياطية وتصفية الشهر بنجاح!');
+      await dialog.success('تم حفظ النسخة الاحتياطية وتصفية الشهر بنجاح!');
       setNewCapital('');
       setShowSettlementModal(false);
       loadData();
     } else {
       if (res.reason === 'cancelled') {
-        alert('تم إلغاء عملية التصفية لأنك لم تقم بحفظ ملف النسخة الاحتياطية.');
+        await dialog.warning('تم إلغاء عملية التصفية لأنك لم تقم بحفظ ملف النسخة الاحتياطية.');
       } else {
-        alert('حدث خطأ أثناء حفظ الملف: ' + res.message);
+        await dialog.error('حدث خطأ أثناء حفظ الملف: ' + res.message);
       }
     }
-    setIsClosing(false);
   };
 
   if (!stats) return <div className="fade-in" style={{ padding: '2rem', textAlign: 'center' }}>جاري تحميل البيانات...</div>;
@@ -236,11 +234,11 @@ export default function Dashboard() {
             </div>
 
             <div style={{ display: 'flex', gap: '1rem' }}>
-              <button className="btn" style={{ flex: 1 }} onClick={() => setShowSettlementModal(false)} disabled={isClosing}>
+              <button className="btn" style={{ flex: 1 }} onClick={() => setShowSettlementModal(false)}>
                 إلغاء الأمر
               </button>
-              <button className="btn btn-primary" style={{ flex: 2, background: 'var(--danger)' }} onClick={confirmCloseMonth} disabled={isClosing}>
-                {isClosing ? 'جاري المعالجة وإنشاء ملف الإكسل...' : 'تأكيد وحفظ نسخة احتياطية وإغلاق'}
+              <button className="btn btn-primary" style={{ flex: 2, background: 'var(--danger)' }} onClick={confirmCloseMonth}>
+                تأكيد وحفظ نسخة احتياطية وإغلاق
               </button>
             </div>
           </div>

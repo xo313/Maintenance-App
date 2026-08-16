@@ -5,6 +5,7 @@ import Operations from './components/Operations';
 import Withdrawals from './components/Withdrawals';
 import SettingsScreen from './components/Settings';
 import CompatibilitySearch from './components/CompatibilitySearch';
+import { DialogProvider } from './components/ui/DialogProvider';
 import './index.css';
 
 function App() {
@@ -34,62 +35,64 @@ function App() {
   };
 
   return (
-    <div className="app-container fade-in" dir="rtl">
-      <div className="sidebar">
-        <div className="sidebar-logo">
-          <div className="sidebar-logo-icon">
-            <Activity size={24} color="#fff" />
+    <DialogProvider>
+      <div className="app-container fade-in" dir="rtl">
+        <div className="sidebar">
+          <div className="sidebar-logo">
+            <div className="sidebar-logo-icon">
+              <Activity size={24} color="#fff" />
+            </div>
+            <h1>{shopName}</h1>
           </div>
-          <h1>{shopName}</h1>
-        </div>
-        
-        <div 
-          className={`nav-item ${activeTab === 'dashboard' ? 'active' : ''}`}
-          onClick={() => setActiveTab('dashboard')}
-        >
-          <Home size={20} />
-          <span>لوحة التحكم</span>
-        </div>
-        
-        <div 
-          className={`nav-item ${activeTab === 'operations' ? 'active' : ''}`}
-          onClick={() => setActiveTab('operations')}
-        >
-          <Wrench size={20} />
-          <span>العمليات والصيانة</span>
-        </div>
-        
-        <div 
-          className={`nav-item ${activeTab === 'withdrawals' ? 'active' : ''}`}
-          onClick={() => setActiveTab('withdrawals')}
-        >
-          <Wallet size={20} />
-          <span>السحوبات والمصروفات</span>
-        </div>
-
-        <div 
-          className={`nav-item ${activeTab === 'compatibilities' ? 'active' : ''}`}
-          onClick={() => setActiveTab('compatibilities')}
-        >
-          <Cpu size={20} />
-          <span>دليل التوافق</span>
-        </div>
-        
-        <div style={{ marginTop: 'auto', paddingTop: '2rem', borderTop: '1px solid var(--border-color)' }}>
+          
           <div 
-            className={`nav-item ${activeTab === 'settings' ? 'active' : ''}`} 
-            onClick={() => setActiveTab('settings')}
+            className={`nav-item ${activeTab === 'dashboard' ? 'active' : ''}`}
+            onClick={() => setActiveTab('dashboard')}
           >
-            <Settings size={20} />
-            <span>الإعدادات</span>
+            <Home size={20} />
+            <span>لوحة التحكم</span>
+          </div>
+          
+          <div 
+            className={`nav-item ${activeTab === 'operations' ? 'active' : ''}`}
+            onClick={() => setActiveTab('operations')}
+          >
+            <Wrench size={20} />
+            <span>العمليات والصيانة</span>
+          </div>
+          
+          <div 
+            className={`nav-item ${activeTab === 'withdrawals' ? 'active' : ''}`}
+            onClick={() => setActiveTab('withdrawals')}
+          >
+            <Wallet size={20} />
+            <span>السحوبات والمصروفات</span>
+          </div>
+
+          <div 
+            className={`nav-item ${activeTab === 'compatibilities' ? 'active' : ''}`}
+            onClick={() => setActiveTab('compatibilities')}
+          >
+            <Cpu size={20} />
+            <span>دليل التوافق</span>
+          </div>
+          
+          <div style={{ marginTop: 'auto', paddingTop: '2rem', borderTop: '1px solid var(--border-color)' }}>
+            <div 
+              className={`nav-item ${activeTab === 'settings' ? 'active' : ''}`} 
+              onClick={() => setActiveTab('settings')}
+            >
+              <Settings size={20} />
+              <span>الإعدادات</span>
+            </div>
           </div>
         </div>
-      </div>
 
-      <div className="main-content">
-        {renderContent()}
+        <div className="main-content">
+          {renderContent()}
+        </div>
       </div>
-    </div>
+    </DialogProvider>
   );
 }
 

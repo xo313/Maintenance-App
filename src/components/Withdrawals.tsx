@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { Withdrawal, Technician } from '../types';
+import { useDialog } from './ui/DialogProvider';
 
 export default function Withdrawals() {
   const [withdrawals, setWithdrawals] = useState<Withdrawal[]>([]);
@@ -10,6 +11,7 @@ export default function Withdrawals() {
   const [amount, setAmount] = useState<string>('');
   const [description, setDescription] = useState<string>('');
   const [editingId, setEditingId] = useState<number | null>(null);
+  const dialog = useDialog();
 
   const loadData = async () => {
     const ws = await window.api.getWithdrawals();
@@ -35,7 +37,7 @@ export default function Withdrawals() {
         description
       });
       if (res && res.success === false) {
-        alert('حدث خطأ: ' + (res.reason || 'فشل الحفظ'));
+        await dialog.error(res.reason || 'فشل الحفظ');
         return;
       }
       setEditingId(null);
@@ -47,7 +49,7 @@ export default function Withdrawals() {
         description
       });
       if (res && res.success === false) {
-        alert('حدث خطأ: ' + (res.reason || 'فشل الحفظ'));
+        await dialog.error(res.reason || 'فشل الحفظ');
         return;
       }
     }
@@ -67,10 +69,11 @@ export default function Withdrawals() {
   };
 
   const handleDelete = async (id: number) => {
-    if (confirm('هل أنت متأكد من حذف هذا السحب؟')) {
+    const confirmed = await dialog.confirm('هل أنت متأكد من حذف هذا السحب؟', 'تأكيد الحذف', true);
+    if (confirmed) {
       const res = await (window as any).api.deleteWithdrawal(id);
       if (res && res.success === false) {
-        alert('حدث خطأ: ' + (res.reason || 'فشل الحذف'));
+        await dialog.error(res.reason || 'فشل الحذف');
         return;
       }
       loadData();

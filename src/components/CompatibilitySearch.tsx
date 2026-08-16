@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import * as xlsx from 'xlsx';
 import { Search, Plus, Edit, Trash2, Cpu, FileUp, ChevronRight, ChevronLeft, PackageSearch, Box } from 'lucide-react';
 import type { IcCompatibility, ScrapDevice } from '../types';
+import { useDialog } from './ui/DialogProvider';
 
 export default function CompatibilitySearch() {
   const [compatibilities, setCompatibilities] = useState<IcCompatibility[]>([]);
@@ -33,6 +34,8 @@ export default function CompatibilitySearch() {
   const [scrapName, setScrapName] = useState('');
   const [scrapModel, setScrapModel] = useState('');
   const [scrapQuantity, setScrapQuantity] = useState('');
+  
+  const dialog = useDialog();
 
   const loadData = async () => {
     const data = await (window as any).api.getIcCompatibilities();
@@ -102,7 +105,10 @@ export default function CompatibilitySearch() {
   // ----------------
   const handleSubmitIC = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!icNumber || !componentType || !compatibleDevices) return alert('الرجاء إكمال الحقول الإجبارية');
+    if (!icNumber || !componentType || !compatibleDevices) {
+      await dialog.warning('الرجاء إكمال الحقول الإجبارية');
+      return;
+    }
     
     const data = { ic_number: icNumber, component_type: componentType, compatible_devices: compatibleDevices, notes };
     let res;
@@ -113,7 +119,7 @@ export default function CompatibilitySearch() {
     }
     
     if (res && res.success === false) {
-      alert('حدث خطأ: ' + (res.reason || 'فشل الحفظ'));
+      await dialog.error(res.reason || 'فشل الحفظ');
       return;
     }
     
@@ -131,10 +137,11 @@ export default function CompatibilitySearch() {
   };
 
   const handleDeleteIC = async (id: number) => {
-    if (confirm('هل أنت متأكد من حذف هذا المكون؟')) {
+    const confirmed = await dialog.confirm('هل أنت متأكد من حذف هذا المكون؟', 'تأكيد الحذف', true);
+    if (confirmed) {
       const res = await (window as any).api.deleteIcCompatibility(id);
       if (res && res.success === false) {
-        alert('حدث خطأ: ' + (res.reason || 'فشل الحذف'));
+        await dialog.error(res.reason || 'فشل الحذف');
         return;
       }
       loadData();
@@ -154,13 +161,13 @@ export default function CompatibilitySearch() {
 
       const res = await (window as any).api.importIcExcelData(data);
       if (res.success) {
-        alert(`تم الانتهاء! إضافة ${res.added} آيسي جديد، تحديث ${res.updated} آيسي موجود (بأجهزة جديدة)، وتجاهل ${res.ignored} سجل مكرر تماماً.`);
+        await dialog.success(`تم الانتهاء! إضافة ${res.added} آيسي جديد، تحديث ${res.updated} آيسي موجود (بأجهزة جديدة)، وتجاهل ${res.ignored} سجل مكرر تماماً.`);
         loadData();
       } else {
-        alert('حدث خطأ أثناء الاستيراد: ' + res.message);
+        await dialog.error('حدث خطأ أثناء الاستيراد: ' + res.message);
       }
     } catch (err: any) {
-      alert('حدث خطأ في قراءة الملف: ' + err.message);
+      await dialog.error('حدث خطأ في قراءة الملف: ' + err.message);
     }
     e.target.value = '';
   };
@@ -179,7 +186,10 @@ export default function CompatibilitySearch() {
   // ----------------
   const handleSubmitScrap = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!scrapName) return alert('يجب إدخال اسم الجهاز');
+    if (!scrapName) {
+      await dialog.warning('يجب إدخال اسم الجهاز');
+      return;
+    }
     
     const data = { device_name: scrapName, device_model: scrapModel, quantity: Number(scrapQuantity) || 1 };
     
@@ -191,7 +201,7 @@ export default function CompatibilitySearch() {
     }
     
     if (res && res.success === false) {
-      alert('حدث خطأ: ' + (res.reason || 'فشل الحفظ'));
+      await dialog.error(res.reason || 'فشل الحفظ');
       return;
     }
     
@@ -210,10 +220,11 @@ export default function CompatibilitySearch() {
   };
 
   const handleDeleteScrap = async (id: number) => {
-    if (confirm('هل أنت متأكد من حذف هذه البوردة؟')) {
+    const confirmed = await dialog.confirm('هل أنت متأكد من حذف هذه البوردة؟', 'تأكيد الحذف', true);
+    if (confirmed) {
       const res = await (window as any).api.deleteScrapDevice(id);
       if (res && res.success === false) {
-        alert('حدث خطأ: ' + (res.reason || 'فشل الحذف'));
+        await dialog.error(res.reason || 'فشل الحذف');
         return;
       }
       loadData();

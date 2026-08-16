@@ -4,6 +4,7 @@ import type { BackupMetadata } from '../types';
 import Technicians from './Technicians';
 import QuickLists from './QuickLists';
 import * as XLSX from 'xlsx';
+import { useDialog } from './ui/DialogProvider';
 
 export default function Settings() {
   const [activeTab, setActiveTab] = useState('technicians');
@@ -12,12 +13,8 @@ export default function Settings() {
   const [whatsappTemplate, setWhatsappTemplate] = useState('');
   const [theme, setTheme] = useState<'light'|'dark'>('dark');
   
-  const [showResetConfirm, setShowResetConfirm] = useState(false);
-  const [isResetting, setIsResetting] = useState(false);
-  
   const [backups, setBackups] = useState<BackupMetadata[]>([]);
-  const [showRestoreConfirm, setShowRestoreConfirm] = useState<string | null>(null);
-  const [isRestoring, setIsRestoring] = useState(false);
+  const dialog = useDialog();
 
   useEffect(() => {
     loadSettings();
@@ -51,7 +48,7 @@ export default function Settings() {
     });
     
     if (res && res.success === false) {
-      alert('حدث خطأ: ' + (res.reason || 'فشل الحفظ'));
+      await dialog.error(res.reason || 'فشل الحفظ');
       return;
     }
     
@@ -74,76 +71,88 @@ export default function Settings() {
 
   const handleExcelExport = async () => {
     try {
-      const res = await (window as any).api.createFullBackup(); // this still does Excel export + JSON
+      dialog.loading('جاري تصدير ملف الإكسل...');
+      const res = await (window as any).api.createFullBackup();
       if (res.success) {
-        alert('تم تصدير ملف الإكسل بنجاح!');
+        await dialog.success('تم تصدير ملف الإكسل بنجاح!');
       } else if (res.reason !== 'cancelled') {
-        alert('حدث خطأ أثناء التصدير: ' + res.message);
+        await dialog.error('حدث خطأ أثناء التصدير: ' + res.message);
+      } else {
+        dialog.close();
       }
     } catch (err) {
-      alert('حدث خطأ أثناء تصدير الإكسل.');
+      await dialog.error('حدث خطأ أثناء تصدير الإكسل.');
     }
   };
 
   const handleBackup = async () => {
     try {
+      dialog.loading('جاري إنشاء النسخة الاحتياطية...');
       const res = await (window as any).api.createBackup();
       if (res.success) {
-        alert('تم إنشاء نسخة احتياطية كاملة للبيانات بنجاح!');
+        await dialog.success('تم إنشاء نسخة احتياطية كاملة للبيانات بنجاح!');
         loadBackups();
       } else {
-        alert('تعذر إنشاء النسخة الاحتياطية، لذلك لم يتم تنفيذ العملية.');
+        await dialog.error('تعذر إنشاء النسخة الاحتياطية، لذلك لم يتم تنفيذ العملية.');
       }
     } catch (err) {
-      alert('حدث خطأ أثناء تصدير النسخة الاحتياطية.');
+      await dialog.error('حدث خطأ أثناء تصدير النسخة الاحتياطية.');
     }
   };
 
-  const handleRestore = async () => {
-    if (!showRestoreConfirm || isRestoring) return;
-    setIsRestoring(true);
+  const handleRestore = async (filename: string) => {
+    const confirmed = await dialog.confirm(
+      'سيتم استبدال بيانات البرنامج الحالية ببيانات هذه النسخة.\nهل تريد المتابعة؟',
+      'استعادة البيانات'
+    );
+    if (!confirmed) return;
+
+    dialog.loading('جاري استعادة البيانات...');
     try {
-      const res = await (window as any).api.restoreBackup(showRestoreConfirm);
+      const res = await (window as any).api.restoreBackup(filename);
       if (res.success) {
-        alert('تمت استعادة النسخة الاحتياطية بنجاح.');
+        await dialog.success('تمت استعادة النسخة الاحتياطية بنجاح.');
         (window as any).api.restartApp();
       } else {
         if (res.reason === 'BACKUP_HASH_MISMATCH') {
-          alert('النسخة الاحتياطية تالفة أو تم تعديلها، لذلك لم يتم تنفيذ الاستعادة.');
+          await dialog.error('BACKUP_HASH_MISMATCH');
         } else if (res.reason === 'RESTORE_VERIFY_FAILED' || res.reason === 'RESTORE_ROLLBACK_FAILED') {
-          alert('فشلت الاستعادة وتمت إعادة البيانات السابقة.');
+          await dialog.error('فشلت الاستعادة وتمت إعادة البيانات السابقة.');
         } else {
-          alert('فشلت عملية الاستعادة. لم يتم تغيير البيانات الحالية.');
+          await dialog.error('فشلت عملية الاستعادة. لم يتم تغيير البيانات الحالية.');
         }
       }
     } catch (err: any) {
-      alert('فشلت عملية الاستعادة. لم يتم تغيير البيانات الحالية.');
+      await dialog.error('فشلت عملية الاستعادة. لم يتم تغيير البيانات الحالية.');
     }
-    setIsRestoring(false);
-    setShowRestoreConfirm(null);
   };
 
   const handleFactoryReset = async () => {
-    if (isResetting) return;
-    setIsResetting(true);
+    const confirmed = await dialog.confirm(
+      'سيتم حذف جميع بيانات الورشة الحالية.\nسيتم إنشاء نسخة احتياطية تلقائية قبل الحذف.\nهل أنت متأكد؟',
+      'تصفير بيانات البرنامج',
+      true
+    );
+    
+    if (!confirmed) return;
+
+    dialog.loading('جاري تصفير النظام...');
     try {
       const res = await (window as any).api.factoryReset();
       if (res.success) {
-        alert('تم إنشاء نسخة احتياطية قبل التصفير.\nتم تصفير النظام بنجاح!');
+        await dialog.success('تم إنشاء نسخة احتياطية قبل التصفير.\nتم تصفير النظام بنجاح!');
         (window as any).api.restartApp();
       } else {
         if (res.reason === 'FACTORY_RESET_BACKUP_FAILED') {
-          alert('تعذر إنشاء النسخة الاحتياطية، لذلك لم يتم تنفيذ العملية.');
+          await dialog.error('تعذر إنشاء النسخة الاحتياطية، لذلك لم يتم تنفيذ العملية.');
         } else {
-          alert('فشل التصفير وتمت إعادة البيانات السابقة.');
+          await dialog.error('فشل التصفير وتمت إعادة البيانات السابقة.');
         }
       }
     } catch (err: any) {
       console.error(err);
-      alert('فشل التصفير وتمت إعادة البيانات السابقة.');
+      await dialog.error('فشل التصفير وتمت إعادة البيانات السابقة.');
     }
-    setIsResetting(false);
-    setShowResetConfirm(false);
   };
 
   return (
@@ -317,7 +326,7 @@ export default function Settings() {
                             {b.size_kb} KB | {b.operations_count} عملية | {b.months_count} شهر | {b.technicians_count} فني
                           </span>
                         </div>
-                        <button className="btn btn-outline" onClick={() => setShowRestoreConfirm(b.filename)}>
+                        <button className="btn btn-outline" onClick={() => handleRestore(b.filename)}>
                           <RefreshCw size={16} /> استعادة
                         </button>
                       </div>
@@ -340,7 +349,7 @@ export default function Settings() {
                     </div>
                     <button 
                       className="btn" 
-                      onClick={() => setShowResetConfirm(true)} 
+                      onClick={handleFactoryReset} 
                       style={{ background: 'var(--danger)', color: 'white', border: 'none' }}
                     >
                       <AlertTriangle size={18} /> تصفير البيانات
@@ -352,58 +361,6 @@ export default function Settings() {
           )}
         </div>
       </div>
-
-      {showResetConfirm && (
-        <div className="modal-overlay">
-          <div className="modal-content" style={{ maxWidth: '500px', textAlign: 'center' }}>
-            <div style={{ color: 'var(--danger)', marginBottom: '1rem', display: 'flex', justifyContent: 'center' }}>
-              <AlertTriangle size={48} />
-            </div>
-            <h2 style={{ color: 'var(--danger)' }}>تحذير خطير!</h2>
-            <p style={{ marginBottom: '1rem', fontSize: '1.1rem', lineHeight: 1.6 }}>
-              سيتم حذف جميع بيانات الورشة الحالية.
-              <br/><br/>
-              سيتم إنشاء نسخة احتياطية تلقائية قبل الحذف.
-              <br/>
-              هل أنت متأكد؟
-            </p>
-            
-            <div style={{ display: 'flex', gap: '1rem', marginTop: '2rem' }}>
-              <button className="btn" style={{ flex: 1 }} onClick={() => setShowResetConfirm(false)} disabled={isResetting}>
-                تراجع وإلغاء
-              </button>
-              <button className="btn btn-primary" style={{ flex: 1, background: 'var(--danger)' }} onClick={handleFactoryReset} disabled={isResetting}>
-                {isResetting ? 'جاري المسح...' : 'نعم، قم بتصفير النظام'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {showRestoreConfirm && (
-        <div className="modal-overlay">
-          <div className="modal-content" style={{ maxWidth: '500px', textAlign: 'center' }}>
-            <div style={{ color: 'var(--warning)', marginBottom: '1rem', display: 'flex', justifyContent: 'center' }}>
-              <RefreshCw size={48} />
-            </div>
-            <h2 style={{ color: 'var(--warning)' }}>استعادة البيانات</h2>
-            <p style={{ marginBottom: '1rem', fontSize: '1.1rem', lineHeight: 1.6 }}>
-              سيتم استبدال بيانات البرنامج الحالية ببيانات هذه النسخة.
-              <br/>
-              هل تريد المتابعة؟
-            </p>
-            
-            <div style={{ display: 'flex', gap: '1rem', marginTop: '2rem' }}>
-              <button className="btn" style={{ flex: 1 }} onClick={() => setShowRestoreConfirm(null)} disabled={isRestoring}>
-                إلغاء
-              </button>
-              <button className="btn btn-primary" style={{ flex: 1, background: 'var(--warning)', color: 'var(--bg-elevated)' }} onClick={handleRestore} disabled={isRestoring}>
-                {isRestoring ? 'جاري الاستعادة...' : 'استعادة'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

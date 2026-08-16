@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import * as xlsx from 'xlsx';
 import { Edit, Trash2, PlusCircle, PenTool, CheckCircle2, ChevronRight, ChevronLeft, MessageCircle } from "lucide-react";
 import type { Operation, Technician } from "../types";
+import { useDialog } from "./ui/DialogProvider";
 
 export default function Operations() {
   const [operations, setOperations] = useState<Operation[]>([]);
@@ -46,8 +47,8 @@ export default function Operations() {
   const [editPaymentStatus, setEditPaymentStatus] = useState<'cash' | 'debt'>('cash');
   const [editStatus, setEditStatus] = useState<'under_maintenance' | 'completed' | 'delivered'>('under_maintenance');
 
-  const [confirmAction, setConfirmAction] = useState<{ message: string; onConfirm: () => void } | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const dialog = useDialog();
 
   const loadData = async () => {
     const ops = await (window as any).api.getOperations();
@@ -99,7 +100,7 @@ export default function Operations() {
         status: status
       });
       if (res && res.success === false) {
-        alert('حدث خطأ: ' + (res.reason || 'فشل الحفظ'));
+        await dialog.error(res.reason || 'فشل الحفظ');
         return;
       }
 
@@ -118,10 +119,10 @@ export default function Operations() {
     };
 
     if (p > s) {
-      setConfirmAction({
-        message: 'تنبيه: التكلفة (المشتريات) أعلى من المبيعات! هل أنت متأكد من تسجيل العملية بخسارة؟',
-        onConfirm: executeSubmit
-      });
+      const confirmed = await dialog.confirm('تنبيه: التكلفة (المشتريات) أعلى من المبيعات! هل أنت متأكد من تسجيل العملية بخسارة؟', 'تأكيد التسجيل', true);
+      if (confirmed) {
+        executeSubmit();
+      }
       return;
     }
 
@@ -164,7 +165,7 @@ export default function Operations() {
       }
       setEditStatus(initialStatus);
     } catch (err: any) {
-      alert("خطأ أثناء فتح النافذة: " + err.message);
+      dialog.error("خطأ أثناء فتح النافذة: " + err.message);
     }
   };
 
@@ -201,7 +202,7 @@ export default function Operations() {
         status: editStatus
       });
       if (res && res.success === false) {
-        alert('حدث خطأ: ' + (res.reason || 'فشل التعديل'));
+        await dialog.error(res.reason || 'فشل التعديل');
         return;
       }
 
@@ -210,10 +211,10 @@ export default function Operations() {
     };
 
     if (p > s) {
-      setConfirmAction({
-        message: 'تنبيه: التكلفة (المشتريات) أعلى من المبيعات! هل أنت متأكد من حفظ العملية بخسارة؟',
-        onConfirm: executeEdit
-      });
+      const confirmed = await dialog.confirm('تنبيه: التكلفة (المشتريات) أعلى من المبيعات! هل أنت متأكد من حفظ العملية بخسارة؟', 'تأكيد الحفظ', true);
+      if (confirmed) {
+        executeEdit();
+      }
       return;
     }
 
@@ -225,6 +226,7 @@ export default function Operations() {
     if (!file) return;
 
     try {
+      dialog.loading('جاري استيراد العمليات...');
       const buffer = await file.arrayBuffer();
       const workbook = xlsx.read(buffer, { type: 'array' });
       const sheetName = workbook.SheetNames[0];
@@ -233,13 +235,13 @@ export default function Operations() {
 
       const res = await (window as any).api.importOperationsExcelData(data);
       if (res.success) {
-        alert(`تم استيراد ${res.added} سجلات بنجاح، وتم تجاهل ${res.ignored} سجلات مكررة.`);
+        await dialog.success(`تم استيراد ${res.added} سجلات بنجاح، وتم تجاهل ${res.ignored} سجلات مكررة.`);
         loadData();
       } else {
-        alert('حدث خطأ أثناء الاستيراد: ' + res.message);
+        await dialog.error('حدث خطأ أثناء الاستيراد: ' + res.message);
       }
     } catch (err: any) {
-      alert('حدث خطأ في قراءة الملف: ' + err.message);
+      await dialog.error('حدث خطأ في قراءة الملف: ' + err.message);
     }
     e.target.value = '';
   };
@@ -253,10 +255,10 @@ export default function Operations() {
     return cleaned;
   };
 
-  const sendWhatsApp = (op: Operation) => {
+  const sendWhatsApp = async (op: Operation) => {
     const formattedPhone = formatPhoneNumber(op.customer_phone || '');
     if (!formattedPhone) {
-      alert('لا يوجد رقم هاتف صالح لإرسال الرسالة.');
+      await dialog.warning('لا يوجد رقم هاتف صالح لإرسال الرسالة.');
       return;
     }
 
@@ -612,18 +614,16 @@ export default function Operations() {
                         onClick={async () => {
                           const res = await (window as any).api.editOperation(op.id, { ...op, status: 'completed' });
                           if (res && res.success === false) {
-                            alert('حدث خطأ: ' + (res.reason || 'فشل الحفظ'));
+                            await dialog.error(res.reason || 'فشل الحفظ');
                             return;
                           }
                           loadData();
                           
                           if (op.customer_phone) {
-                            setConfirmAction({
-                              message: 'تم تحديث الحالة إلى مكتمل. هل تود إرسال رسالة واتساب للزبون لإبلاغه بجاهزية الجهاز؟',
-                              onConfirm: () => {
-                                sendWhatsApp(op);
-                              }
-                            });
+                            const confirmed = await dialog.confirm('تم تحديث الحالة إلى مكتمل. هل تود إرسال رسالة واتساب للزبون لإبلاغه بجاهزية الجهاز؟', 'تأكيد المراسلة');
+                            if (confirmed) {
+                              sendWhatsApp(op);
+                            }
                           } else {
                             setToastMessage('تم تحديث الحالة إلى مكتمل');
                             setTimeout(() => setToastMessage(null), 3000);
@@ -641,7 +641,7 @@ export default function Operations() {
                         onClick={async () => {
                           const res = await (window as any).api.editOperation(op.id, { ...op, status: 'delivered' });
                           if (res && res.success === false) {
-                            alert('حدث خطأ: ' + (res.reason || 'فشل الحفظ'));
+                            await dialog.error(res.reason || 'فشل الحفظ');
                             return;
                           }
                           loadData();
@@ -658,21 +658,18 @@ export default function Operations() {
                     </button>
                     <button
                       className="btn btn-icon danger"
-                      onClick={() => {
-                        setConfirmAction({
-                          message: 'هل أنت متأكد من حذف هذه العملية؟',
-                          onConfirm: async () => {
-                            const res = await (window as any).api.deleteOperation(op.id);
-                            if (res && res.success === false) {
-                              setToastMessage('حدث خطأ: ' + (res.reason || 'فشل الحذف'));
-                              setTimeout(() => setToastMessage(null), 4000);
-                            } else {
-                              loadData();
-                              setToastMessage('تم حذف العملية بنجاح');
-                              setTimeout(() => setToastMessage(null), 3000);
-                            }
+                      onClick={async () => {
+                        const confirmed = await dialog.confirm('هل أنت متأكد من حذف هذه العملية؟', 'تأكيد الحذف', true);
+                        if (confirmed) {
+                          const res = await (window as any).api.deleteOperation(op.id);
+                          if (res && res.success === false) {
+                            await dialog.error(res.reason || 'فشل الحذف');
+                          } else {
+                            loadData();
+                            setToastMessage('تم حذف العملية بنجاح');
+                            setTimeout(() => setToastMessage(null), 3000);
                           }
-                        });
+                        }
                       }}
                       title="حذف"
                     >
@@ -724,37 +721,6 @@ export default function Operations() {
       {toastMessage && (
         <div style={{ position: 'fixed', bottom: '2rem', left: '50%', transform: 'translateX(-50%)', background: 'var(--success)', color: '#fff', padding: '1rem 2rem', borderRadius: '8px', zIndex: 1000, boxShadow: '0 4px 12px rgba(0,0,0,0.15)', fontWeight: 'bold' }}>
           {toastMessage}
-        </div>
-      )}
-
-      {/* Confirm Action Modal */}
-      {confirmAction && (
-        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
-          <div className="stat-card fade-in" style={{ width: '90%', maxWidth: '400px', background: 'var(--bg-color)', border: '1px solid var(--border-color)', textAlign: 'center', padding: '2rem' }}>
-            <h3 style={{ marginBottom: '1rem', color: 'var(--primary)' }}>تأكيد الإجراء</h3>
-            <p style={{ marginBottom: '2rem', color: 'var(--text-main)', lineHeight: '1.6' }}>
-              {confirmAction.message}
-            </p>
-            <div style={{ display: 'flex', gap: '1rem' }}>
-              <button 
-                className="btn" 
-                onClick={() => setConfirmAction(null)}
-                style={{ flex: 1 }}
-              >
-                إلغاء
-              </button>
-              <button 
-                className="btn btn-primary" 
-                onClick={() => {
-                  confirmAction.onConfirm();
-                  setConfirmAction(null);
-                }}
-                style={{ flex: 1 }}
-              >
-                تأكيد
-              </button>
-            </div>
-          </div>
         </div>
       )}
     </div>
