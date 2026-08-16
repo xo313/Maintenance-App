@@ -6,6 +6,16 @@ export interface Settings {
   theme?: 'light' | 'dark';
 }
 
+export interface BackupMetadata {
+  filename: string;
+  created_at: string;
+  size_kb: number;
+  operations_count: number;
+  months_count: number;
+  technicians_count: number;
+  withdrawals_count: number;
+}
+
 export interface Month {
   id: number;
   month_name: string;

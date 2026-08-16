@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import * as xlsx from 'xlsx';
 import { db, initDB } from './database.js';
 import type { Operation, Withdrawal, Technician } from '../src/types';
+import { createBackup, listBackups, readBackup } from './backup.js';
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -34,8 +35,8 @@ function createWindow() {
   setupIPC();
 
   // Run daily backup check on startup and every hour
-  autoBackupDaily();
-  setInterval(autoBackupDaily, 1000 * 60 * 60);
+  createBackup(db.data, false);
+  setInterval(() => createBackup(db.data, false), 1000 * 60 * 60);
 
   if (process.env.VITE_DEV_SERVER_URL) {
     mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL);
@@ -63,83 +64,7 @@ function getCurrentMonth() {
   return m;
 }
 
-function autoBackupDaily() {
-  try {
-    const currentMonth = getCurrentMonth();
-    const monthNameSafe = currentMonth.month_name ? currentMonth.month_name.replace(/\//g, '-').replace(/ /g, '_') : 'Unknown';
-    const todayStr = new Date().toLocaleDateString('en-GB').replace(/\//g, '-');
-    const userDataPath = app.getPath('userData');
-    const backupDir = path.join(userDataPath, 'backups');
-
-    if (!fs.existsSync(backupDir)) {
-      fs.mkdirSync(backupDir, { recursive: true });
-    }
-
-    const backupFilePath = path.join(backupDir, `Backup_${monthNameSafe}.xlsx`);
-
-    // Generate data
-    const ops = db.data.operations.filter((op: any) => op.month_id === currentMonth.id || op.paid_in_month_id === currentMonth.id);
-    const debts = db.data.operations.filter((op: any) => op.payment_status === 'debt');
-    const tiedCapital = debts.reduce((sum: number, op: any) => sum + (op.cost || 0), 0);
-    const availableCapital = currentMonth.start_capital - tiedCapital;
-
-    const cashOps = ops.filter((op: any) => op.payment_status === 'cash' && !op.paid_in_month_id);
-    const paidDebts = db.data.operations.filter((op: any) => op.paid_in_month_id === currentMonth.id);
-    const realizedShopProfit = cashOps.reduce((sum: number, op: any) => sum + (op.shop_profit || 0), 0) +
-      paidDebts.reduce((sum: number, op: any) => sum + (op.shop_profit || 0), 0);
-
-    const shopWithdrawals = db.data.withdrawals
-      .filter((w: any) => w.type === 'shop_withdrawal' && w.month_id === currentMonth.id)
-      .reduce((sum: number, w: any) => sum + (w.amount || 0), 0);
-
-    const totalTechProfit = ops.reduce((sum: number, op: any) => sum + (op.tech_profit || 0), 0);
-    const debtTotal = debts.reduce((sum: number, op: any) => sum + (op.price || 0), 0);
-
-    const summaryData = [
-      ["تقرير يوم", todayStr],
-      [""],
-      ["رأس المال المسترد فعلياً", availableCapital],
-      ["إجمالي الأرباح الصافية للمحل (المحصلة)", realizedShopProfit],
-      ["الصافي المستحق للمحل", availableCapital + realizedShopProfit - shopWithdrawals],
-      ["إجمالي أرباح الفنيين", totalTechProfit],
-      ["إجمالي الديون المتبقية (السوق)", debtTotal]
-    ];
-
-    const opsLogData = ops.map((op: any) => ({
-      "التاريخ": op.date,
-      "رقم العملية": op.id,
-      "اسم العميل": op.customer_name || '-',
-      "الجهاز/الأعطال": (op.device || '') + (op.faults && op.faults.length > 0 ? ` (${op.faults.join(', ')})` : ''),
-      "حالة الدفع": op.payment_status === 'debt' ? 'دين' : 'نقدي',
-      "التكلفة": op.cost || 0,
-      "المبلغ الإجمالي": op.price || 0,
-      "صافي الربح": (op.price || 0) - (op.cost || 0),
-      "حصة المحل": op.shop_profit || 0,
-      "حصة الفني": op.tech_profit || 0,
-      "اسم الفني": op.technician_name
-    }));
-
-    const wb = xlsx.utils.book_new();
-    const wsSummary = xlsx.utils.aoa_to_sheet(summaryData);
-    const wsOps = xlsx.utils.json_to_sheet(opsLogData);
-
-    wsSummary['!cols'] = [{ wch: 40 }, { wch: 20 }];
-    wsOps['!cols'] = [
-      { wch: 15 }, { wch: 15 }, { wch: 25 }, { wch: 20 },
-      { wch: 15 }, { wch: 15 }, { wch: 15 }, { wch: 15 },
-      { wch: 15 }, { wch: 15 }, { wch: 20 }
-    ];
-
-    xlsx.utils.book_append_sheet(wb, wsSummary, "الخلاصة");
-    xlsx.utils.book_append_sheet(wb, wsOps, "سجل العمليات");
-
-    const buf = xlsx.write(wb, { type: 'buffer', bookType: 'xlsx' });
-    fs.writeFileSync(backupFilePath, buf);
-    console.log("Daily backup created:", backupFilePath);
-  } catch (e) {
-    console.error("Failed daily backup", e);
-  }
-}
+// Old autoBackupDaily logic replaced by centralized backup service
 
 function setupIPC() {
   const getCurrentMonth = () => db.getCurrentMonth();
@@ -953,10 +878,45 @@ function setupIPC() {
     }
   });
 
+  ipcMain.handle('backup:create', () => {
+    return createBackup(db.data, true);
+  });
+
+  ipcMain.handle('backup:list', () => {
+    return listBackups();
+  });
+
+  ipcMain.handle('backup:restore', (_, filename) => {
+    try {
+      // 1. Read and validate
+      const restoredData = readBackup(filename);
+
+      // 2. Backup current DB
+      const preRestoreBackup = createBackup(db.data, true);
+      if (!preRestoreBackup.success) {
+        return { success: false, reason: 'CURRENT_BACKUP_FAILED', message: 'تعذر إنشاء نسخة احتياطية من البيانات الحالية، لذلك لم يتم تنفيذ الاستعادة.' };
+      }
+
+      // 3. Restore
+      db.data = restoredData;
+      db.save();
+
+      return { success: true };
+    } catch (e: any) {
+      return { success: false, reason: 'RESTORE_FAILED', message: e.message };
+    }
+  });
+
   ipcMain.handle('factory-reset', () => {
+    // 1. Mandatory Full JSON Backup before wipe
+    const backupResult = createBackup(db.data, true);
+    if (!backupResult.success) {
+      return { success: false, reason: 'FACTORY_RESET_BACKUP_FAILED', message: 'فشل إنشاء نسخة احتياطية إجبارية. تم إيقاف عملية التصفير لحماية البيانات.' };
+    }
+
+    // 2. Wipe data securely
     db.data.operations = [];
     db.data.withdrawals = [];
-
     if (db.data.technicians) {
       db.data.technicians.forEach((t: any) => {
         t.start_balance = 0;
@@ -973,6 +933,6 @@ function setupIPC() {
     }];
 
     db.save();
-    return true;
+    return { success: true };
   });
 }

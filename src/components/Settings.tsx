@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Settings as SettingsIcon, Users, Sliders, List, Save, Download, AlertTriangle, Moon, Sun } from 'lucide-react';
+import { Settings as SettingsIcon, Users, Sliders, List, Save, Download, AlertTriangle, Moon, Sun, Database, RefreshCw } from 'lucide-react';
+import type { BackupMetadata } from '../types';
 import Technicians from './Technicians';
 import QuickLists from './QuickLists';
 import * as XLSX from 'xlsx';
@@ -13,11 +14,24 @@ export default function Settings() {
   
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
-  const [hasBackup, setHasBackup] = useState(false);
+  
+  const [backups, setBackups] = useState<BackupMetadata[]>([]);
+  const [showRestoreConfirm, setShowRestoreConfirm] = useState<string | null>(null);
+  const [isRestoring, setIsRestoring] = useState(false);
 
   useEffect(() => {
     loadSettings();
+    loadBackups();
   }, []);
+
+  const loadBackups = async () => {
+    try {
+      const data = await (window as any).api.listBackups();
+      setBackups(data || []);
+    } catch (e) {
+      console.error(e);
+    }
+  };
 
   const loadSettings = async () => {
     const data = await (window as any).api.getSettings();
@@ -53,33 +67,68 @@ export default function Settings() {
     setTheme(theme === 'dark' ? 'light' : 'dark');
   };
 
-  const handleBackup = async () => {
+  const handleExcelExport = async () => {
     try {
-      const res = await (window as any).api.createFullBackup();
+      const res = await (window as any).api.createFullBackup(); // this still does Excel export + JSON
       if (res.success) {
-        alert('تم حفظ النسخة الاحتياطية بنجاح (Excel + JSON)! أصبح بإمكانك الآن تصفير النظام.');
-        setHasBackup(true);
+        alert('تم تصدير ملف الإكسل بنجاح!');
       } else if (res.reason !== 'cancelled') {
         alert('حدث خطأ أثناء التصدير: ' + res.message);
       }
     } catch (err) {
-      console.error(err);
+      alert('حدث خطأ أثناء تصدير الإكسل.');
+    }
+  };
+
+  const handleBackup = async () => {
+    try {
+      const res = await (window as any).api.createBackup();
+      if (res.success) {
+        alert('تم إنشاء نسخة احتياطية كاملة للبيانات بنجاح!');
+        loadBackups();
+      } else {
+        alert('حدث خطأ أثناء النسخ الاحتياطي: ' + res.message);
+      }
+    } catch (err) {
       alert('حدث خطأ أثناء تصدير النسخة الاحتياطية.');
     }
+  };
+
+  const handleRestore = async () => {
+    if (!showRestoreConfirm || isRestoring) return;
+    setIsRestoring(true);
+    try {
+      const res = await (window as any).api.restoreBackup(showRestoreConfirm);
+      if (res.success) {
+        alert('تم استعادة البيانات بنجاح! سيتم إعادة تشغيل التطبيق لتطبيق التغييرات.');
+        (window as any).api.restartApp();
+      } else {
+        alert('فشل الاستعادة: ' + res.message);
+      }
+    } catch (err: any) {
+      alert('فشل الاستعادة: ' + err.message);
+    }
+    setIsRestoring(false);
+    setShowRestoreConfirm(null);
   };
 
   const handleFactoryReset = async () => {
     if (isResetting) return;
     setIsResetting(true);
     try {
-      await (window as any).api.factoryReset();
-      alert('تم تصفير بيانات العمليات والمصروفات والديون بنجاح!');
-      setShowResetConfirm(false);
-    } catch (err) {
+      const res = await (window as any).api.factoryReset();
+      if (res.success) {
+        alert('تم تصفير النظام بنجاح! سيتم إعادة التشغيل.');
+        (window as any).api.restartApp();
+      } else {
+        alert('حدث خطأ أثناء التصفير: ' + res.message);
+      }
+    } catch (err: any) {
       console.error(err);
-      alert('حدث خطأ أثناء تصفير النظام.');
+      alert('حدث خطأ أثناء تصفير النظام: ' + err.message);
     }
     setIsResetting(false);
+    setShowResetConfirm(false);
   };
 
   return (
@@ -214,6 +263,54 @@ export default function Settings() {
                 </div>
               </div>
 
+              {/* Backup and Restore Section */}
+              <div className="stat-card fade-in" style={{ padding: '2rem' }}>
+                <h3 style={{ marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--success)' }}>
+                  <Database size={20} /> النسخ الاحتياطية
+                </h3>
+                
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--bg-base)', padding: '1rem', borderRadius: '8px', border: '1px solid var(--border-color)', marginBottom: '1.5rem' }}>
+                  <div>
+                    <strong style={{ display: 'block', marginBottom: '0.2rem' }}>تصدير إلى Excel</strong>
+                    <span style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>تصدير جميع بيانات العمليات والفنيين والسحوبات إلى ملف إكسل.</span>
+                  </div>
+                  <button className="btn" onClick={handleExcelExport} style={{ color: 'var(--text-main)', borderColor: 'var(--border-color)' }}>
+                    <Download size={18} /> تصدير Excel
+                  </button>
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--bg-base)', padding: '1rem', borderRadius: '8px', border: '1px solid var(--border-color)', marginBottom: '1.5rem' }}>
+                  <div>
+                    <strong style={{ display: 'block', marginBottom: '0.2rem' }}>نسخة احتياطية شاملة (JSON)</strong>
+                    <span style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>حفظ كامل بيانات النظام للاسترجاع الآمن</span>
+                  </div>
+                  <button className="btn" onClick={handleBackup} style={{ color: 'var(--success)', borderColor: 'var(--success)' }}>
+                    <Save size={18} /> إنشاء نسخة احتياطية
+                  </button>
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                  <strong style={{ display: 'block', marginBottom: '0.5rem' }}>النسخ المتوفرة ({backups.length}/30):</strong>
+                  {backups.length === 0 ? (
+                    <div style={{ padding: '1rem', textAlign: 'center', color: 'var(--text-muted)', background: 'var(--bg-base)', borderRadius: '8px' }}>لا توجد نسخ احتياطية مسجلة</div>
+                  ) : (
+                    backups.map(b => (
+                      <div key={b.filename} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--bg-base)', padding: '1rem', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
+                          <strong>{new Date(b.created_at).toLocaleString('ar-EG')}</strong>
+                          <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                            {b.size_kb} KB | {b.operations_count} عملية | {b.months_count} شهر | {b.technicians_count} فني
+                          </span>
+                        </div>
+                        <button className="btn btn-outline" onClick={() => setShowRestoreConfirm(b.filename)}>
+                          <RefreshCw size={16} /> استعادة
+                        </button>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+
               {/* Danger Zone */}
               <div className="stat-card fade-in" style={{ padding: '2rem', border: '1px solid var(--danger-bg)' }}>
                 <h3 style={{ marginBottom: '1.5rem', color: 'var(--danger)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
@@ -221,20 +318,10 @@ export default function Settings() {
                 </h3>
                 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--bg-base)', padding: '1rem', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
-                    <div>
-                      <strong style={{ display: 'block', marginBottom: '0.2rem' }}>نسخة احتياطية للإكسل</strong>
-                      <span style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>تصدير جميع العمليات في النظام إلى ملف Excel للحفظ الآمن.</span>
-                    </div>
-                    <button className="btn" onClick={handleBackup} style={{ color: 'var(--success)', borderColor: 'var(--success)' }}>
-                      <Download size={18} /> تصدير Excel
-                    </button>
-                  </div>
-
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--danger-bg)', padding: '1rem', borderRadius: '8px', border: '1px solid rgba(239, 68, 68, 0.3)' }}>
                     <div>
-                      <strong style={{ display: 'block', marginBottom: '0.2rem', color: 'var(--danger)' }}>تصفير النظام الذكي</strong>
-                      <span style={{ fontSize: '0.9rem', color: 'var(--danger)' }}>مسح جميع بيانات العمليات، المصروفات، والديون (بدون مسح التوافقات والفنيين).</span>
+                      <strong style={{ display: 'block', marginBottom: '0.2rem', color: 'var(--danger)' }}>تصفير النظام بالكامل</strong>
+                      <span style={{ fontSize: '0.9rem', color: 'var(--danger)' }}>مسح جميع البيانات الحالية وإعادتها للوضع الافتراضي. سيتم إنشاء نسخة احتياطية أولاً.</span>
                     </div>
                     <button 
                       className="btn" 
@@ -259,9 +346,11 @@ export default function Settings() {
             </div>
             <h2 style={{ color: 'var(--danger)' }}>تحذير خطير!</h2>
             <p style={{ marginBottom: '1rem', fontSize: '1.1rem', lineHeight: 1.6 }}>
-              هل أنت متأكد من رغبتك في <strong>مسح جميع العمليات والديون والمصروفات</strong> بالكامل؟
+              سيتم حذف جميع بيانات الورشة الحالية.
               <br/><br/>
-              هذا الإجراء سيقوم بتصفير أرباح الفنيين وصندوق المركز ليبدأ من جديد. (لا يمكن التراجع عن هذه الخطوة).
+              سيتم إنشاء نسخة احتياطية تلقائية قبل الحذف.
+              <br/>
+              هل أنت متأكد؟
             </p>
             
             <div style={{ display: 'flex', gap: '1rem', marginTop: '2rem' }}>
@@ -270,6 +359,31 @@ export default function Settings() {
               </button>
               <button className="btn btn-primary" style={{ flex: 1, background: 'var(--danger)' }} onClick={handleFactoryReset} disabled={isResetting}>
                 {isResetting ? 'جاري المسح...' : 'نعم، قم بتصفير النظام'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showRestoreConfirm && (
+        <div className="modal-overlay">
+          <div className="modal-content" style={{ maxWidth: '500px', textAlign: 'center' }}>
+            <div style={{ color: 'var(--warning)', marginBottom: '1rem', display: 'flex', justifyContent: 'center' }}>
+              <RefreshCw size={48} />
+            </div>
+            <h2 style={{ color: 'var(--warning)' }}>استعادة البيانات</h2>
+            <p style={{ marginBottom: '1rem', fontSize: '1.1rem', lineHeight: 1.6 }}>
+              سيتم استبدال بيانات البرنامج الحالية ببيانات هذه النسخة.
+              <br/>
+              هل تريد المتابعة؟
+            </p>
+            
+            <div style={{ display: 'flex', gap: '1rem', marginTop: '2rem' }}>
+              <button className="btn" style={{ flex: 1 }} onClick={() => setShowRestoreConfirm(null)} disabled={isRestoring}>
+                إلغاء
+              </button>
+              <button className="btn btn-primary" style={{ flex: 1, background: 'var(--warning)', color: 'var(--bg-elevated)' }} onClick={handleRestore} disabled={isRestoring}>
+                {isRestoring ? 'جاري الاستعادة...' : 'استعادة'}
               </button>
             </div>
           </div>
