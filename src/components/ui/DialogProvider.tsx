@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useRef, useEffect } from 'react';
 import { CheckCircle, AlertTriangle, Info, AlertCircle, X, Loader2 } from 'lucide-react';
 
-export type DialogType = 'success' | 'error' | 'warning' | 'info' | 'confirm' | 'danger' | 'loading';
+export type DialogType = 'success' | 'error' | 'warning' | 'info' | 'confirm' | 'danger';
 
 export interface DialogOptions {
   type: DialogType;
@@ -51,13 +51,18 @@ const getFriendlyMessage = (msg: string): string => {
 export const DialogProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [options, setOptions] = useState<DialogOptions | null>(null);
+  const [loadingMessage, setLoadingMessage] = useState<string | null>(null);
   const resolveRef = useRef<(value: boolean) => void>(() => {});
   
   const modalRef = useRef<HTMLDivElement>(null);
   const confirmBtnRef = useRef<HTMLButtonElement>(null);
 
   const showDialog = (opts: DialogOptions): Promise<boolean> => {
-    // Prevent opening a new dialog if it's already loading, unless explicitly overriding
+    // Prevent opening a new dialog if it's already loading or open
+    if (isOpen || loadingMessage) {
+      console.warn("A dialog is already open. Ignoring new dialog request.");
+      return Promise.resolve(false);
+    }
     setOptions({
       ...opts,
       message: getFriendlyMessage(opts.message)
@@ -69,17 +74,16 @@ export const DialogProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   };
 
   const handleClose = (result: boolean) => {
-    // If it's loading, it cannot be manually closed by buttons (no buttons shown)
-    // It's closed programmatically via close()
-    if (options?.type === 'loading') return;
-    
     setIsOpen(false);
     resolveRef.current(result);
   };
 
   const closeProgrammatic = () => {
-    setIsOpen(false);
-    resolveRef.current(false);
+    setLoadingMessage(null);
+    if (isOpen) {
+      setIsOpen(false);
+      resolveRef.current(false);
+    }
   };
 
   const alert = (message: string, type: DialogType = 'info') => {
@@ -95,7 +99,7 @@ export const DialogProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   };
 
   const loading = (message: string) => {
-    showDialog({ type: 'loading', message });
+    setLoadingMessage(message);
   };
 
   const confirm = (message: string, title = 'تأكيد', isDanger = false) => {
@@ -111,8 +115,8 @@ export const DialogProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   // Keyboard navigation
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (loadingMessage) return;
       if (!isOpen || !options) return;
-      if (options.type === 'loading') return;
 
       if (e.key === 'Escape') {
         handleClose(false);
@@ -144,7 +148,6 @@ export const DialogProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       case 'warning': return <AlertTriangle size={48} className="text-warning mb-4 mx-auto" style={{ color: '#f59e0b' }} />;
       case 'confirm': return <Info size={48} className="text-primary mb-4 mx-auto" style={{ color: 'var(--primary)' }} />;
       case 'info': return <Info size={48} className="text-primary mb-4 mx-auto" style={{ color: 'var(--primary)' }} />;
-      case 'loading': return <Loader2 size={48} className="text-primary mb-4 mx-auto spinner" style={{ color: 'var(--primary)', animation: 'spin 1s linear infinite' }} />;
       default: return null;
     }
   };
@@ -159,8 +162,8 @@ export const DialogProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           aria-modal="true"
           aria-labelledby="dialog-title"
           onClick={() => {
-            // Do not close on overlay click for confirms or loading to prevent accidental actions
-            if (options.type !== 'confirm' && options.type !== 'danger' && options.type !== 'loading') {
+            // Do not close on overlay click for confirms or danger to prevent accidental actions
+            if (options.type !== 'confirm' && options.type !== 'danger') {
               handleClose(false);
             }
           }}
@@ -177,7 +180,7 @@ export const DialogProvider: React.FC<{ children: React.ReactNode }> = ({ childr
               alignItems: 'center'
             }}
           >
-            {options.type !== 'loading' && options.type !== 'confirm' && options.type !== 'danger' && (
+            {options.type !== 'confirm' && options.type !== 'danger' && (
                <button 
                  onClick={() => handleClose(false)}
                  style={{ alignSelf: 'flex-start', background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}
@@ -199,39 +202,62 @@ export const DialogProvider: React.FC<{ children: React.ReactNode }> = ({ childr
               {options.message}
             </p>
             
-            {options.type !== 'loading' && (
-              <div style={{ display: 'flex', gap: '1rem', width: '100%', justifyContent: 'center', marginTop: '1rem' }}>
-                {(options.type === 'confirm' || options.type === 'danger') && (
-                  <button 
-                    className="btn btn-secondary" 
-                    onClick={() => handleClose(false)}
-                    data-action="cancel"
-                    style={{ flex: 1 }}
-                  >
-                    {options.cancelText || 'إلغاء'}
-                  </button>
-                )}
-                
+            <div style={{ display: 'flex', gap: '1rem', width: '100%', justifyContent: 'center', marginTop: '1rem' }}>
+              {(options.type === 'confirm' || options.type === 'danger') && (
                 <button 
-                  ref={confirmBtnRef}
-                  className={`btn ${options.type === 'danger' ? 'btn-danger' : 'btn-primary'}`} 
-                  onClick={() => handleClose(true)}
-                  data-action="confirm"
+                  className="btn btn-secondary" 
+                  onClick={() => handleClose(false)}
+                  data-action="cancel"
                   style={{ flex: 1 }}
                 >
-                  {options.confirmText || 'حسنًا'}
+                  {options.cancelText || 'إلغاء'}
                 </button>
-              </div>
-            )}
-            
-            {options.type === 'loading' && (
-               <style>{`
-                 @keyframes spin {
-                   from { transform: rotate(0deg); }
-                   to { transform: rotate(360deg); }
-                 }
-               `}</style>
-            )}
+              )}
+              
+              <button 
+                ref={confirmBtnRef}
+                className={`btn ${options.type === 'danger' ? 'btn-danger' : 'btn-primary'}`} 
+                onClick={() => handleClose(true)}
+                data-action="confirm"
+                style={{ flex: 1 }}
+              >
+                {options.confirmText || 'حسنًا'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {loadingMessage && (
+        <div 
+          className="modal-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="loading-title"
+          style={{ zIndex: 10000 }}
+        >
+          <div 
+            className="modal-content text-center" 
+            style={{ 
+              animation: 'fadeIn 0.2s ease-out',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center'
+            }}
+          >
+            <Loader2 size={48} className="text-primary mb-4 mx-auto spinner" style={{ color: 'var(--primary)', animation: 'spin 1s linear infinite' }} />
+            <h2 id="loading-title" style={{ color: 'var(--text-main)', marginBottom: '1rem', fontSize: '1.5rem', fontWeight: 600 }}>
+              جاري المعالجة...
+            </h2>
+            <p style={{ color: 'var(--text-muted)', marginBottom: '2rem', fontSize: '1.1rem', lineHeight: 1.6, whiteSpace: 'pre-line' }}>
+              {loadingMessage}
+            </p>
+            <style>{`
+              @keyframes spin {
+                from { transform: rotate(0deg); }
+                to { transform: rotate(360deg); }
+              }
+            `}</style>
           </div>
         </div>
       )}

@@ -14,6 +14,7 @@ export default function Settings() {
   const [theme, setTheme] = useState<'light'|'dark'>('dark');
   
   const [backups, setBackups] = useState<BackupMetadata[]>([]);
+  const [isProcessing, setIsProcessing] = useState(false);
   const dialog = useDialog();
 
   useEffect(() => {
@@ -70,25 +71,38 @@ export default function Settings() {
   };
 
   const handleExcelExport = async () => {
+    if (isProcessing) return;
+    setIsProcessing(true);
+    
     try {
       dialog.loading('جاري تصدير ملف الإكسل...');
       const res = await (window as any).api.createFullBackup();
+      
+      dialog.close();
+      
       if (res.success) {
         await dialog.success('تم تصدير ملف الإكسل بنجاح!');
       } else if (res.reason !== 'cancelled') {
         await dialog.error('حدث خطأ أثناء التصدير: ' + res.message);
-      } else {
-        dialog.close();
       }
     } catch (err) {
+      dialog.close();
       await dialog.error('حدث خطأ أثناء تصدير الإكسل.');
+    } finally {
+      setIsProcessing(false);
     }
   };
 
   const handleBackup = async () => {
+    if (isProcessing) return;
+    setIsProcessing(true);
+    
     try {
       dialog.loading('جاري إنشاء النسخة الاحتياطية...');
       const res = await (window as any).api.createBackup();
+      
+      dialog.close();
+      
       if (res.success) {
         await dialog.success('تم إنشاء نسخة احتياطية كاملة للبيانات بنجاح!');
         loadBackups();
@@ -96,20 +110,30 @@ export default function Settings() {
         await dialog.error('تعذر إنشاء النسخة الاحتياطية، لذلك لم يتم تنفيذ العملية.');
       }
     } catch (err) {
+      dialog.close();
       await dialog.error('حدث خطأ أثناء تصدير النسخة الاحتياطية.');
+    } finally {
+      setIsProcessing(false);
     }
   };
 
   const handleRestore = async (filename: string) => {
+    if (isProcessing) return;
+    
     const confirmed = await dialog.confirm(
       'سيتم استبدال بيانات البرنامج الحالية ببيانات هذه النسخة.\nهل تريد المتابعة؟',
       'استعادة البيانات'
     );
     if (!confirmed) return;
 
+    setIsProcessing(true);
     dialog.loading('جاري استعادة البيانات...');
+    
     try {
       const res = await (window as any).api.restoreBackup(filename);
+      
+      dialog.close();
+      
       if (res.success) {
         await dialog.success('تمت استعادة النسخة الاحتياطية بنجاح.');
         (window as any).api.restartApp();
@@ -123,11 +147,16 @@ export default function Settings() {
         }
       }
     } catch (err: any) {
+      dialog.close();
       await dialog.error('فشلت عملية الاستعادة. لم يتم تغيير البيانات الحالية.');
+    } finally {
+      setIsProcessing(false);
     }
   };
 
   const handleFactoryReset = async () => {
+    if (isProcessing) return;
+    
     const confirmed = await dialog.confirm(
       'سيتم حذف جميع بيانات الورشة الحالية.\nسيتم إنشاء نسخة احتياطية تلقائية قبل الحذف.\nهل أنت متأكد؟',
       'تصفير بيانات البرنامج',
@@ -136,9 +165,14 @@ export default function Settings() {
     
     if (!confirmed) return;
 
+    setIsProcessing(true);
     dialog.loading('جاري تصفير النظام...');
+    
     try {
       const res = await (window as any).api.factoryReset();
+      
+      dialog.close();
+      
       if (res.success) {
         await dialog.success('تم إنشاء نسخة احتياطية قبل التصفير.\nتم تصفير النظام بنجاح!');
         (window as any).api.restartApp();
@@ -150,8 +184,11 @@ export default function Settings() {
         }
       }
     } catch (err: any) {
+      dialog.close();
       console.error(err);
       await dialog.error('فشل التصفير وتمت إعادة البيانات السابقة.');
+    } finally {
+      setIsProcessing(false);
     }
   };
 
@@ -298,7 +335,7 @@ export default function Settings() {
                     <strong style={{ display: 'block', marginBottom: '0.2rem' }}>تصدير إلى Excel</strong>
                     <span style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>تصدير جميع بيانات العمليات والفنيين والسحوبات إلى ملف إكسل.</span>
                   </div>
-                  <button className="btn" onClick={handleExcelExport} style={{ color: 'var(--text-main)', borderColor: 'var(--border-color)' }}>
+                  <button className="btn" onClick={handleExcelExport} disabled={isProcessing} style={{ color: 'var(--text-main)', borderColor: 'var(--border-color)' }}>
                     <Download size={18} /> تصدير Excel
                   </button>
                 </div>
@@ -308,8 +345,9 @@ export default function Settings() {
                     <strong style={{ display: 'block', marginBottom: '0.2rem' }}>نسخة احتياطية شاملة (JSON)</strong>
                     <span style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>حفظ كامل بيانات النظام للاسترجاع الآمن</span>
                   </div>
-                  <button className="btn" onClick={handleBackup} style={{ color: 'var(--success)', borderColor: 'var(--success)' }}>
-                    <Save size={18} /> إنشاء نسخة احتياطية
+                  <button className="btn btn-primary" onClick={handleBackup} disabled={isProcessing}>
+                    <Database size={20} />
+                    إنشاء نسخة احتياطية الآن
                   </button>
                 </div>
 
@@ -326,8 +364,8 @@ export default function Settings() {
                             {b.size_kb} KB | {b.operations_count} عملية | {b.months_count} شهر | {b.technicians_count} فني
                           </span>
                         </div>
-                        <button className="btn btn-outline" onClick={() => handleRestore(b.filename)}>
-                          <RefreshCw size={16} /> استعادة
+                        <button className="btn btn-icon" onClick={() => handleRestore(b.filename)} title="استعادة هذه النسخة" disabled={isProcessing}>
+                          <RotateCcw size={18} />
                         </button>
                       </div>
                     ))
@@ -347,12 +385,9 @@ export default function Settings() {
                       <strong style={{ display: 'block', marginBottom: '0.2rem', color: 'var(--danger)' }}>تصفير النظام بالكامل</strong>
                       <span style={{ fontSize: '0.9rem', color: 'var(--danger)' }}>مسح جميع البيانات الحالية وإعادتها للوضع الافتراضي. سيتم إنشاء نسخة احتياطية أولاً.</span>
                     </div>
-                    <button 
-                      className="btn" 
-                      onClick={handleFactoryReset} 
-                      style={{ background: 'var(--danger)', color: 'white', border: 'none' }}
-                    >
-                      <AlertTriangle size={18} /> تصفير البيانات
+                    <button className="btn btn-primary" style={{ background: 'var(--danger)', borderColor: 'var(--danger)' }} onClick={handleFactoryReset} disabled={isProcessing}>
+                      <AlertTriangle size={20} />
+                      تصفير البرنامج بالكامل
                     </button>
                   </div>
                 </div>

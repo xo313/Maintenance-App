@@ -8,6 +8,7 @@ export default function Dashboard() {
   const [debts, setDebts] = useState<Operation[]>([]);
   const [newCapital, setNewCapital] = useState<string>('');
   const [showSettlementModal, setShowSettlementModal] = useState(false);
+  const [isClosing, setIsClosing] = useState(false);
   const dialog = useDialog();
 
   const loadData = async () => {
@@ -39,20 +40,33 @@ export default function Dashboard() {
       return;
     }
     
-    dialog.loading('جاري التصفية وإنشاء ملف الإكسل والنسخة الاحتياطية...');
-    const res = await (window as any).api.closeMonthWithExcel(parseFloat(newCapital));
+    if (isClosing) return;
+    setIsClosing(true);
     
-    if (res.success) {
-      await dialog.success('تم حفظ النسخة الاحتياطية وتصفية الشهر بنجاح!');
-      setNewCapital('');
-      setShowSettlementModal(false);
-      loadData();
-    } else {
-      if (res.reason === 'cancelled') {
-        await dialog.warning('تم إلغاء عملية التصفية لأنك لم تقم بحفظ ملف النسخة الاحتياطية.');
+    dialog.loading('جاري التصفية وإنشاء ملف الإكسل والنسخة الاحتياطية...');
+    
+    try {
+      const res = await (window as any).api.closeMonthWithExcel(parseFloat(newCapital));
+      
+      dialog.close();
+      
+      if (res.success) {
+        await dialog.success('تم حفظ النسخة الاحتياطية وتصفية الشهر بنجاح!');
+        setNewCapital('');
+        setShowSettlementModal(false);
+        loadData();
       } else {
-        await dialog.error('حدث خطأ أثناء حفظ الملف: ' + res.message);
+        if (res.reason === 'cancelled') {
+          await dialog.warning('تم إلغاء عملية التصفية لأنك لم تقم بحفظ ملف النسخة الاحتياطية.');
+        } else {
+          await dialog.error('حدث خطأ أثناء حفظ الملف: ' + res.message);
+        }
       }
+    } catch (err: any) {
+      dialog.close();
+      await dialog.error('حدث خطأ غير متوقع: ' + err.message);
+    } finally {
+      setIsClosing(false);
     }
   };
 
@@ -234,11 +248,11 @@ export default function Dashboard() {
             </div>
 
             <div style={{ display: 'flex', gap: '1rem' }}>
-              <button className="btn" style={{ flex: 1 }} onClick={() => setShowSettlementModal(false)}>
+              <button className="btn" style={{ flex: 1 }} onClick={() => setShowSettlementModal(false)} disabled={isClosing}>
                 إلغاء الأمر
               </button>
-              <button className="btn btn-primary" style={{ flex: 2, background: 'var(--danger)' }} onClick={confirmCloseMonth}>
-                تأكيد وحفظ نسخة احتياطية وإغلاق
+              <button className="btn btn-primary" style={{ flex: 2, background: 'var(--danger)' }} onClick={confirmCloseMonth} disabled={isClosing}>
+                {isClosing ? 'جاري التصفية...' : 'تأكيد وحفظ نسخة احتياطية وإغلاق'}
               </button>
             </div>
           </div>

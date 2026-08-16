@@ -34,6 +34,7 @@ export default function CompatibilitySearch() {
   const [scrapName, setScrapName] = useState('');
   const [scrapModel, setScrapModel] = useState('');
   const [scrapQuantity, setScrapQuantity] = useState('');
+  const [isImporting, setIsImporting] = useState(false);
   
   const dialog = useDialog();
 
@@ -152,7 +153,11 @@ export default function CompatibilitySearch() {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    if (isImporting) return;
+    setIsImporting(true);
+
     try {
+      dialog.loading('جاري استيراد التوافقية...');
       const buffer = await file.arrayBuffer();
       const workbook = xlsx.read(buffer, { type: 'array' });
       const sheetName = workbook.SheetNames[0];
@@ -160,6 +165,9 @@ export default function CompatibilitySearch() {
       const data = xlsx.utils.sheet_to_json(worksheet, { header: 1 });
 
       const res = await (window as any).api.importIcExcelData(data);
+      
+      dialog.close();
+      
       if (res.success) {
         await dialog.success(`تم الانتهاء! إضافة ${res.added} آيسي جديد، تحديث ${res.updated} آيسي موجود (بأجهزة جديدة)، وتجاهل ${res.ignored} سجل مكرر تماماً.`);
         loadData();
@@ -167,9 +175,12 @@ export default function CompatibilitySearch() {
         await dialog.error('حدث خطأ أثناء الاستيراد: ' + res.message);
       }
     } catch (err: any) {
-      await dialog.error('حدث خطأ في قراءة الملف: ' + err.message);
+      dialog.close();
+      await dialog.error('حدث خطأ غير متوقع: ' + err.message);
+    } finally {
+      setIsImporting(false);
+      e.target.value = '';
     }
-    e.target.value = '';
   };
 
   const closeModal = () => {
@@ -269,9 +280,9 @@ export default function CompatibilitySearch() {
           <button className="btn" onClick={() => setIsScrapModalOpen(true)} style={{ background: 'var(--primary-light)', color: 'var(--primary)', borderColor: 'var(--primary-light)' }}>
             <PackageSearch size={20} /> إدارة مخزن التفصيخ
           </button>
-          <label className="btn" style={{ background: 'var(--success-bg)', color: 'var(--success)', borderColor: 'var(--success-bg)', cursor: 'pointer', margin: 0 }}>
+          <label className="btn" style={{ background: 'var(--success-bg)', color: 'var(--success)', borderColor: 'var(--success-bg)', cursor: isImporting ? 'not-allowed' : 'pointer', margin: 0 }}>
             <FileUp size={20} /> استيراد إكسل
-            <input type="file" accept=".xlsx, .xls" style={{ display: 'none' }} onChange={handleFileUpload} />
+            <input type="file" accept=".xlsx, .xls" style={{ display: 'none' }} onChange={handleFileUpload} disabled={isImporting} />
           </label>
           <button className="btn btn-primary" onClick={() => setIsModalOpen(true)}>
             <Plus size={20} /> إضافة مكون

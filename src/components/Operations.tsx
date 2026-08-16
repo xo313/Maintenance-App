@@ -48,6 +48,7 @@ export default function Operations() {
   const [editStatus, setEditStatus] = useState<'under_maintenance' | 'completed' | 'delivered'>('under_maintenance');
 
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [isImporting, setIsImporting] = useState(false);
   const dialog = useDialog();
 
   const loadData = async () => {
@@ -225,6 +226,9 @@ export default function Operations() {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    if (isImporting) return;
+    setIsImporting(true);
+    
     try {
       dialog.loading('جاري استيراد العمليات...');
       const buffer = await file.arrayBuffer();
@@ -234,6 +238,9 @@ export default function Operations() {
       const data = xlsx.utils.sheet_to_json(worksheet, { header: 1 });
 
       const res = await (window as any).api.importOperationsExcelData(data);
+      
+      dialog.close();
+      
       if (res.success) {
         await dialog.success(`تم استيراد ${res.added} سجلات بنجاح، وتم تجاهل ${res.ignored} سجلات مكررة.`);
         loadData();
@@ -241,9 +248,12 @@ export default function Operations() {
         await dialog.error('حدث خطأ أثناء الاستيراد: ' + res.message);
       }
     } catch (err: any) {
-      await dialog.error('حدث خطأ في قراءة الملف: ' + err.message);
+      dialog.close();
+      await dialog.error('حدث خطأ غير متوقع: ' + err.message);
+    } finally {
+      setIsImporting(false);
+      e.target.value = '';
     }
-    e.target.value = '';
   };
 
   const formatPhoneNumber = (phone: string) => {
@@ -292,9 +302,9 @@ export default function Operations() {
           العمليات والصيانة
         </h2>
         <div style={{ display: 'flex', gap: '1rem' }}>
-          <label className="btn" style={{ background: 'var(--success-bg)', color: 'var(--success)', borderColor: 'var(--success-bg)', cursor: 'pointer', margin: 0 }}>
-            استيراد من إكسل
-            <input type="file" accept=".xlsx, .xls" style={{ display: 'none' }} onChange={handleFileUpload} />
+          <label className="btn" style={{ background: 'var(--success-bg)', color: 'var(--success)', borderColor: 'var(--success-bg)', cursor: isImporting ? 'not-allowed' : 'pointer', margin: 0 }}>
+            <FileUp size={20} /> استيراد إكسل
+            <input type="file" accept=".xlsx, .xls" style={{ display: 'none' }} onChange={handleFileUpload} disabled={isImporting} />
           </label>
         </div>
       </div>
