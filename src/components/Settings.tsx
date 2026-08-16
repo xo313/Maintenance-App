@@ -44,11 +44,16 @@ export default function Settings() {
   const [saveMessage, setSaveMessage] = useState('');
 
   const handleSaveSettings = async () => {
-    await (window as any).api.updateSettings({
+    const res = await (window as any).api.updateSettings({
       shop_name: shopName,
       whatsapp_template: whatsappTemplate,
       theme: theme
     });
+    
+    if (res && res.success === false) {
+      alert('حدث خطأ: ' + (res.reason || 'فشل الحفظ'));
+      return;
+    }
     
     // Apply theme immediately
     if (theme === 'light') {

@@ -85,7 +85,7 @@ export default function Operations() {
         finalFaults.push(faultType.trim());
       }
 
-      await (window as any).api.addOperation({
+      const res = await (window as any).api.addOperation({
         technician_id: Number(techId),
         customer_name: customerName,
         customer_phone: customerPhone,
@@ -98,6 +98,10 @@ export default function Operations() {
         payment_status: paymentStatus,
         status: status
       });
+      if (res && res.success === false) {
+        alert('حدث خطأ: ' + (res.reason || 'فشل الحفظ'));
+        return;
+      }
 
       setDeviceName('');
       setFaultType('');
@@ -183,7 +187,7 @@ export default function Operations() {
         finalEditFaults.push(editFaultType.trim());
       }
 
-      await (window as any).api.editOperation(editingOp.id, {
+      const res = await (window as any).api.editOperation(editingOp.id, {
         technician_id: Number(editTechId),
         customer_name: editCustomerName,
         customer_phone: editCustomerPhone,
@@ -196,6 +200,10 @@ export default function Operations() {
         payment_status: editPaymentStatus,
         status: editStatus
       });
+      if (res && res.success === false) {
+        alert('حدث خطأ: ' + (res.reason || 'فشل التعديل'));
+        return;
+      }
 
       setEditingOp(null);
       loadData();
@@ -602,7 +610,11 @@ export default function Operations() {
                         className="btn btn-icon" 
                         style={{ color: '#3b82f6', background: 'rgba(59, 130, 246, 0.1)' }}
                         onClick={async () => {
-                          await (window as any).api.editOperation(op.id, { ...op, status: 'completed' });
+                          const res = await (window as any).api.editOperation(op.id, { ...op, status: 'completed' });
+                          if (res && res.success === false) {
+                            alert('حدث خطأ: ' + (res.reason || 'فشل الحفظ'));
+                            return;
+                          }
                           loadData();
                           
                           if (op.customer_phone) {
@@ -627,7 +639,11 @@ export default function Operations() {
                         className="btn btn-icon" 
                         style={{ color: 'var(--success)', background: 'var(--success-bg)' }}
                         onClick={async () => {
-                          await (window as any).api.editOperation(op.id, { ...op, status: 'delivered' });
+                          const res = await (window as any).api.editOperation(op.id, { ...op, status: 'delivered' });
+                          if (res && res.success === false) {
+                            alert('حدث خطأ: ' + (res.reason || 'فشل الحفظ'));
+                            return;
+                          }
                           loadData();
                           setToastMessage('تم تسليم الجهاز واحتساب الأرباح بنجاح');
                           setTimeout(() => setToastMessage(null), 3000);
@@ -647,8 +663,8 @@ export default function Operations() {
                           message: 'هل أنت متأكد من حذف هذه العملية؟',
                           onConfirm: async () => {
                             const res = await (window as any).api.deleteOperation(op.id);
-                            if (!res) {
-                              setToastMessage('لا يمكن حذف عملية من شهر تم تقفيله مسبقاً لحماية السجلات.');
+                            if (res && res.success === false) {
+                              setToastMessage('حدث خطأ: ' + (res.reason || 'فشل الحذف'));
                               setTimeout(() => setToastMessage(null), 4000);
                             } else {
                               loadData();

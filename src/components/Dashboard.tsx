@@ -24,7 +24,11 @@ export default function Dashboard() {
     const ok = confirm("هل أنت متأكد من سداد هذا الدين؟");
     if (!ok) return;
     
-    await (window as any).api.payDebt(id);
+    const res = await (window as any).api.payDebt(id);
+    if (res && res.success === false) {
+      alert('حدث خطأ: ' + (res.reason || 'فشل السداد'));
+      return;
+    }
     loadData();
   };
 

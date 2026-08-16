@@ -105,10 +105,16 @@ export default function CompatibilitySearch() {
     if (!icNumber || !componentType || !compatibleDevices) return alert('الرجاء إكمال الحقول الإجبارية');
     
     const data = { ic_number: icNumber, component_type: componentType, compatible_devices: compatibleDevices, notes };
+    let res;
     if (editingId) {
-      await (window as any).api.editIcCompatibility(editingId, data);
+      res = await (window as any).api.editIcCompatibility(editingId, data);
     } else {
-      await (window as any).api.addIcCompatibility(data);
+      res = await (window as any).api.addIcCompatibility(data);
+    }
+    
+    if (res && res.success === false) {
+      alert('حدث خطأ: ' + (res.reason || 'فشل الحفظ'));
+      return;
     }
     
     closeModal();
@@ -126,7 +132,11 @@ export default function CompatibilitySearch() {
 
   const handleDeleteIC = async (id: number) => {
     if (confirm('هل أنت متأكد من حذف هذا المكون؟')) {
-      await (window as any).api.deleteIcCompatibility(id);
+      const res = await (window as any).api.deleteIcCompatibility(id);
+      if (res && res.success === false) {
+        alert('حدث خطأ: ' + (res.reason || 'فشل الحذف'));
+        return;
+      }
       loadData();
     }
   };
@@ -173,10 +183,16 @@ export default function CompatibilitySearch() {
     
     const data = { device_name: scrapName, device_model: scrapModel, quantity: Number(scrapQuantity) || 1 };
     
+    let res;
     if (scrapEditingId) {
-      await (window as any).api.editScrapDevice(scrapEditingId, data);
+      res = await (window as any).api.editScrapDevice(scrapEditingId, data);
     } else {
-      await (window as any).api.addScrapDevice(data);
+      res = await (window as any).api.addScrapDevice(data);
+    }
+    
+    if (res && res.success === false) {
+      alert('حدث خطأ: ' + (res.reason || 'فشل الحفظ'));
+      return;
     }
     
     setScrapName('');
@@ -195,7 +211,11 @@ export default function CompatibilitySearch() {
 
   const handleDeleteScrap = async (id: number) => {
     if (confirm('هل أنت متأكد من حذف هذه البوردة؟')) {
-      await (window as any).api.deleteScrapDevice(id);
+      const res = await (window as any).api.deleteScrapDevice(id);
+      if (res && res.success === false) {
+        alert('حدث خطأ: ' + (res.reason || 'فشل الحذف'));
+        return;
+      }
       loadData();
     }
   };

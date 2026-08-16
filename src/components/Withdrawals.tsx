@@ -28,23 +28,28 @@ export default function Withdrawals() {
     if (type === 'tech_withdrawal' && !techId) return;
 
     if (editingId) {
-      const success = await (window as any).api.editWithdrawal(editingId, {
+      const res = await (window as any).api.editWithdrawal(editingId, {
         type,
         technician_id: type === 'tech_withdrawal' ? Number(techId) : null,
         amount: parseFloat(amount),
         description
       });
-      if (!success) {
-        alert('لا يمكن تعديل سحوبات تعود لأشهر مالية سابقة تم تقفيلها.');
+      if (res && res.success === false) {
+        alert('حدث خطأ: ' + (res.reason || 'فشل الحفظ'));
+        return;
       }
       setEditingId(null);
     } else {
-      await (window as any).api.addWithdrawal({
+      const res = await (window as any).api.addWithdrawal({
         type,
         technician_id: type === 'tech_withdrawal' ? Number(techId) : null,
         amount: parseFloat(amount),
         description
       });
+      if (res && res.success === false) {
+        alert('حدث خطأ: ' + (res.reason || 'فشل الحفظ'));
+        return;
+      }
     }
 
     setAmount('');
@@ -63,9 +68,10 @@ export default function Withdrawals() {
 
   const handleDelete = async (id: number) => {
     if (confirm('هل أنت متأكد من حذف هذا السحب؟')) {
-      const success = await (window as any).api.deleteWithdrawal(id);
-      if (!success) {
-        alert('لا يمكن حذف سحوبات تعود لأشهر مالية سابقة تم تقفيلها.');
+      const res = await (window as any).api.deleteWithdrawal(id);
+      if (res && res.success === false) {
+        alert('حدث خطأ: ' + (res.reason || 'فشل الحذف'));
+        return;
       }
       loadData();
     }

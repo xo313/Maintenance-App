@@ -21,7 +21,11 @@ export default function QuickLists() {
   const handleAddDevice = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newDevice.trim()) return;
-    await (window as any).api.addQuickListItem('device', newDevice.trim());
+    const res = await (window as any).api.addQuickListItem('device', newDevice.trim());
+    if (res && res.success === false) {
+      alert('حدث خطأ: ' + (res.reason || 'فشل الحفظ'));
+      return;
+    }
     setNewDevice('');
     loadLists();
   };
@@ -29,21 +33,33 @@ export default function QuickLists() {
   const handleAddFault = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newFault.trim()) return;
-    await (window as any).api.addQuickListItem('fault', newFault.trim());
+    const res = await (window as any).api.addQuickListItem('fault', newFault.trim());
+    if (res && res.success === false) {
+      alert('حدث خطأ: ' + (res.reason || 'فشل الحفظ'));
+      return;
+    }
     setNewFault('');
     loadLists();
   };
 
   const handleRemoveDevice = async (item: string) => {
     if (confirm(`هل أنت متأكد من حذف "${item}"؟`)) {
-      await (window as any).api.removeQuickListItem('device', item);
+      const res = await (window as any).api.removeQuickListItem('device', item);
+      if (res && res.success === false) {
+        alert('حدث خطأ: ' + (res.reason || 'فشل الحذف'));
+        return;
+      }
       loadLists();
     }
   };
 
   const handleRemoveFault = async (item: string) => {
     if (confirm(`هل أنت متأكد من حذف "${item}"؟`)) {
-      await (window as any).api.removeQuickListItem('fault', item);
+      const res = await (window as any).api.removeQuickListItem('fault', item);
+      if (res && res.success === false) {
+        alert('حدث خطأ: ' + (res.reason || 'فشل الحذف'));
+        return;
+      }
       loadLists();
     }
   };

@@ -30,7 +30,11 @@ export default function Technicians() {
     e.preventDefault();
     if (!name) return;
     
-    await (window as any).api.addTechnician(name, parseFloat(profitPercentage) / 100);
+    const res = await (window as any).api.addTechnician(name, parseFloat(profitPercentage) / 100);
+    if (res && res.success === false) {
+      alert('حدث خطأ: ' + (res.reason || 'فشل الحفظ'));
+      return;
+    }
     setName('');
     setProfitPercentage('30');
     loadData();
@@ -45,11 +49,15 @@ export default function Technicians() {
 
   const handleSaveEdit = async () => {
     if (!editingTech) return;
-    await (window as any).api.editTechnician(
+    const res = await (window as any).api.editTechnician(
       editingTech.id, 
       editName, 
       parseFloat(editProfit) / 100
     );
+    if (res && res.success === false) {
+      alert('حدث خطأ: ' + (res.reason || 'فشل الحفظ'));
+      return;
+    }
     setEditingTech(null);
     loadData();
   };
@@ -64,11 +72,15 @@ export default function Technicians() {
     e.preventDefault();
     if (!withdrawalTech || !withdrawalAmount) return;
 
-    await (window as any).api.addWithdrawal({
+    const res = await (window as any).api.addWithdrawal({
       type: 'tech_withdrawal',
       technician_id: withdrawalTech.id,
       amount: parseFloat(withdrawalAmount)
     });
+    if (res && res.success === false) {
+      alert('حدث خطأ: ' + (res.reason || 'فشل الحفظ'));
+      return;
+    }
 
     setWithdrawalTech(null);
     loadData();
@@ -154,7 +166,11 @@ export default function Technicians() {
                   style={{ padding: '0.3rem 0.6rem', fontSize: '0.8rem', background: 'transparent', color: 'var(--danger)', border: '1px solid var(--danger)' }}
                   onClick={async () => {
                     if (confirm('هل أنت متأكد من حذف هذا الفني؟')) {
-                      await (window as any).api.deleteTechnician(t.id);
+                      const res = await (window as any).api.deleteTechnician(t.id);
+                      if (res && res.success === false) {
+                        alert('حدث خطأ: ' + (res.reason || 'فشل الحذف'));
+                        return;
+                      }
                       loadData();
                     }
                   }}

@@ -74,9 +74,14 @@ function setupIPC() {
   });
 
   ipcMain.handle('update-settings', (_, settings) => {
+    const oldSettings = { ...db.data.settings };
     db.data.settings = { ...db.data.settings, ...settings };
-    db.save();
-    return true;
+    if (!db.save()) {
+      db.data.settings = oldSettings;
+      db.load();
+      return { success: false, reason: 'DATABASE_SAVE_FAILED' };
+    }
+    return { success: true };
   });
 
   ipcMain.handle('restart-app', () => {
@@ -91,30 +96,47 @@ function setupIPC() {
 
   ipcMain.handle('add-technician', (_, name, profit_percentage) => {
     const newId = Date.now();
-    db.data.technicians.push({ id: newId, name, profit_percentage: Math.max(0, profit_percentage), is_active: true });
-    db.save();
-    return true;
+    const newTech = { id: newId, name, profit_percentage: Math.max(0, profit_percentage), is_active: true };
+    db.data.technicians.push(newTech);
+    if (!db.save()) {
+      db.data.technicians.pop();
+      db.load();
+      return { success: false, reason: 'DATABASE_SAVE_FAILED' };
+    }
+    return { success: true };
   });
 
   ipcMain.handle('edit-technician', (_, id, name, profit_percentage) => {
     const tech = db.data.technicians.find((t: any) => t.id === id);
     if (tech) {
+      const oldName = tech.name;
+      const oldProfit = tech.profit_percentage;
       tech.name = name;
       tech.profit_percentage = Math.max(0, profit_percentage);
-      db.save();
-      return true;
+      if (!db.save()) {
+        tech.name = oldName;
+        tech.profit_percentage = oldProfit;
+        db.load();
+        return { success: false, reason: 'DATABASE_SAVE_FAILED' };
+      }
+      return { success: true };
     }
-    return false;
+    return { success: false, reason: 'NOT_FOUND' };
   });
 
   ipcMain.handle('delete-technician', (_, id) => {
     const tech = db.data.technicians.find((t: any) => t.id === id);
     if (tech) {
+      const oldActive = tech.is_active;
       tech.is_active = false;
-      db.save();
-      return true;
+      if (!db.save()) {
+        tech.is_active = oldActive;
+        db.load();
+        return { success: false, reason: 'DATABASE_SAVE_FAILED' };
+      }
+      return { success: true };
     }
-    return false;
+    return { success: false, reason: 'NOT_FOUND' };
   });
 
   // Operations
@@ -137,6 +159,12 @@ function setupIPC() {
   ipcMain.handle('add-operation', (_, op) => {
     const newId = Date.now(); // Prevents ID conflicts
     
+    // Validate Technician
+    const techExists = db.data.technicians.find((t: any) => t.id === op.technician_id);
+    if (!techExists) {
+      return { success: false, reason: 'UNKNOWN_TECHNICIAN' };
+    }
+
     // Strict Validation
     op.price = Number(op.price) || 0;
     op.cost = Number(op.cost) || 0;
@@ -151,14 +179,20 @@ function setupIPC() {
       op.payment_status = 'cash';
     }
     
-    db.data.operations.push({
+    const newOp = {
       id: newId,
       date: new Date().toLocaleDateString('en-GB'),
       month_id: getCurrentMonth().id,
       ...op
-    });
-    db.save();
-    return true;
+    };
+    db.data.operations.push(newOp);
+    
+    if (!db.save()) {
+      db.data.operations.pop();
+      db.load();
+      return { success: false, reason: 'DATABASE_SAVE_FAILED' };
+    }
+    return { success: true };
   });
 
   ipcMain.handle('edit-operation', (_, opId, updatedOp) => {
@@ -166,9 +200,17 @@ function setupIPC() {
     if (idx !== -1) {
       // Prevent retroactive edits
       if (db.data.operations[idx].month_id !== getCurrentMonth().id) {
-        return false;
+        return { success: false, reason: 'CANNOT_EDIT_PAST_MONTH' };
       }
       
+      // Validate Technician
+      if (updatedOp.technician_id) {
+        const techExists = db.data.technicians.find((t: any) => t.id === updatedOp.technician_id);
+        if (!techExists) {
+          return { success: false, reason: 'UNKNOWN_TECHNICIAN' };
+        }
+      }
+
       // Strict Validation
       updatedOp.price = Number(updatedOp.price) || 0;
       updatedOp.cost = Number(updatedOp.cost) || 0;
@@ -182,11 +224,23 @@ function setupIPC() {
         updatedOp.payment_status = 'cash';
       }
       
-      db.data.operations[idx] = { ...db.data.operations[idx], ...updatedOp };
-      db.save();
-      return true;
+      const oldOp = { ...db.data.operations[idx] };
+      // Protect immutable fields from being overwritten by spread
+      delete updatedOp.id;
+      delete updatedOp.month_id;
+      delete updatedOp.created_at;
+      delete updatedOp.paid_in_month_id;
+      delete updatedOp.paid_at;
+      
+      db.data.operations[idx] = { ...oldOp, ...updatedOp };
+      if (!db.save()) {
+        db.data.operations[idx] = oldOp;
+        db.load();
+        return { success: false, reason: 'DATABASE_SAVE_FAILED' };
+      }
+      return { success: true };
     }
-    return false;
+    return { success: false, reason: 'NOT_FOUND' };
   });
 
   ipcMain.handle('delete-operation', (_, opId) => {
@@ -194,13 +248,18 @@ function setupIPC() {
     if (idx !== -1) {
       // Prevent retroactive deletion
       if (db.data.operations[idx].month_id !== getCurrentMonth().id) {
-        return false;
+        return { success: false, reason: 'CANNOT_DELETE_PAST_MONTH' };
       }
+      const removed = db.data.operations[idx];
       db.data.operations.splice(idx, 1);
-      db.save();
-      return true;
+      if (!db.save()) {
+        db.data.operations.splice(idx, 0, removed);
+        db.load();
+        return { success: false, reason: 'DATABASE_SAVE_FAILED' };
+      }
+      return { success: true };
     }
-    return false;
+    return { success: false, reason: 'NOT_FOUND' };
   });
 
   // Debts
@@ -216,13 +275,28 @@ function setupIPC() {
   ipcMain.handle('pay-debt', (_, operation_id) => {
     const op = db.data.operations.find((o: any) => o.id === operation_id);
     if (op) {
+      if (op.payment_status !== 'debt') {
+        return { success: false, reason: 'DEBT_ALREADY_PAID' };
+      }
+      
+      const oldStatus = op.payment_status;
+      const oldPaidInMonth = op.paid_in_month_id;
+      const oldPaidAt = op.paid_at;
+
       op.payment_status = 'cash';
       op.paid_in_month_id = getCurrentMonth().id;
-      op.paid_at = new Date().toISOString(); // Requirement: سداد الدين يسجل paid_at
-      db.save();
-      return true;
+      op.paid_at = new Date().toISOString();
+      
+      if (!db.save()) {
+        op.payment_status = oldStatus;
+        op.paid_in_month_id = oldPaidInMonth;
+        op.paid_at = oldPaidAt;
+        db.load();
+        return { success: false, reason: 'DATABASE_SAVE_FAILED' };
+      }
+      return { success: true };
     }
-    return false;
+    return { success: false, reason: 'NOT_FOUND' };
   });
 
   // Withdrawals
@@ -237,48 +311,81 @@ function setupIPC() {
     const newId = Date.now();
     
     // Sanitize and Validate
-    w.amount = Number(w.amount) || 0;
+    if (typeof w.amount !== 'number' || !Number.isFinite(w.amount)) {
+      w.amount = Number(w.amount) || 0;
+    }
     if (w.amount < 0) w.amount = 0;
     
     if (!['shop_withdrawal', 'tech_withdrawal'].includes(w.type)) {
       w.type = 'shop_withdrawal';
     }
+
+    if (w.type === 'tech_withdrawal') {
+      const techExists = db.data.technicians.find((t: any) => t.id === w.technician_id);
+      if (!techExists) {
+        return { success: false, reason: 'UNKNOWN_TECHNICIAN' };
+      }
+    }
     
-    db.data.withdrawals.push({
+    const newWithdrawal = {
       id: newId,
       date: new Date().toLocaleDateString('en-GB'),
       month_id: getCurrentMonth().id,
       ...w
-    });
-    db.save();
-    return true;
+    };
+    db.data.withdrawals.push(newWithdrawal);
+    if (!db.save()) {
+      db.data.withdrawals.pop();
+      db.load();
+      return { success: false, reason: 'DATABASE_SAVE_FAILED' };
+    }
+    return { success: true };
   });
 
   ipcMain.handle('edit-withdrawal', (_, id, updatedW) => {
     const idx = db.data.withdrawals.findIndex((w: any) => w.id === id);
     if (idx !== -1) {
       if (db.data.withdrawals[idx].month_id !== getCurrentMonth().id) {
-        return false;
+        return { success: false, reason: 'CANNOT_EDIT_PAST_MONTH' };
       }
-      updatedW.amount = Math.max(0, updatedW.amount || 0);
-      db.data.withdrawals[idx] = { ...db.data.withdrawals[idx], ...updatedW };
-      db.save();
-      return true;
+      
+      if (typeof updatedW.amount !== 'undefined') {
+        updatedW.amount = Math.max(0, Number(updatedW.amount) || 0);
+      }
+      
+      const oldW = { ...db.data.withdrawals[idx] };
+      delete updatedW.id;
+      delete updatedW.month_id;
+      delete updatedW.date;
+      
+      db.data.withdrawals[idx] = { ...oldW, ...updatedW };
+      
+      if (!db.save()) {
+        db.data.withdrawals[idx] = oldW;
+        db.load();
+        return { success: false, reason: 'DATABASE_SAVE_FAILED' };
+      }
+      return { success: true };
     }
-    return false;
+    return { success: false, reason: 'NOT_FOUND' };
   });
 
   ipcMain.handle('delete-withdrawal', (_, id) => {
     const idx = db.data.withdrawals.findIndex((w: any) => w.id === id);
     if (idx !== -1) {
       if (db.data.withdrawals[idx].month_id !== getCurrentMonth().id) {
-        return false;
+        return { success: false, reason: 'CANNOT_DELETE_PAST_MONTH' };
       }
+      const removed = db.data.withdrawals[idx];
       db.data.withdrawals.splice(idx, 1);
-      db.save();
-      return true;
+      if (!db.save()) {
+        db.data.withdrawals.splice(idx, 0, removed);
+        db.load();
+        return { success: false, reason: 'DATABASE_SAVE_FAILED' };
+      }
+      return { success: true };
     }
-    return false;
+    return { success: false, reason: 'NOT_FOUND' };
   });
 
   // Dashboard Stats
@@ -374,24 +481,42 @@ function setupIPC() {
     const newIc = { ...ic, id: Date.now() };
     if (!db.data.ic_compatibilities) db.data.ic_compatibilities = [];
     db.data.ic_compatibilities.unshift(newIc);
-    db.save();
-    return true;
+    if (!db.save()) {
+      db.data.ic_compatibilities.shift();
+      db.load();
+      return { success: false, reason: 'DATABASE_SAVE_FAILED' };
+    }
+    return { success: true };
   });
 
   ipcMain.handle('edit-ic-compatibility', (_, id, ic) => {
     const idx = db.data.ic_compatibilities.findIndex((i: any) => i.id === id);
     if (idx !== -1) {
-      db.data.ic_compatibilities[idx] = { ...db.data.ic_compatibilities[idx], ...ic };
-      db.save();
-      return true;
+      const oldIc = { ...db.data.ic_compatibilities[idx] };
+      db.data.ic_compatibilities[idx] = { ...oldIc, ...ic };
+      if (!db.save()) {
+        db.data.ic_compatibilities[idx] = oldIc;
+        db.load();
+        return { success: false, reason: 'DATABASE_SAVE_FAILED' };
+      }
+      return { success: true };
     }
-    return false;
+    return { success: false, reason: 'NOT_FOUND' };
   });
 
   ipcMain.handle('delete-ic-compatibility', (_, id) => {
-    db.data.ic_compatibilities = db.data.ic_compatibilities.filter((i: any) => i.id !== id);
-    db.save();
-    return true;
+    const idx = db.data.ic_compatibilities.findIndex((i: any) => i.id === id);
+    if (idx !== -1) {
+      const removed = db.data.ic_compatibilities[idx];
+      db.data.ic_compatibilities.splice(idx, 1);
+      if (!db.save()) {
+        db.data.ic_compatibilities.splice(idx, 0, removed);
+        db.load();
+        return { success: false, reason: 'DATABASE_SAVE_FAILED' };
+      }
+      return { success: true };
+    }
+    return { success: false, reason: 'NOT_FOUND' };
   });
 
   ipcMain.handle('import-operations-excel-data', async (_, data: any[]) => {
@@ -412,7 +537,11 @@ function setupIPC() {
 
         const techName = String(row[10] || '').trim();
         let tech = db.data.technicians.find((t: any) => t.name === techName);
-        let techId = tech ? tech.id : (db.data.technicians[0]?.id || 1);
+        if (!tech) {
+          ignored++;
+          continue; // P0-5: reject unknown technician
+        }
+        let techId = tech.id;
 
         const isDuplicate = db.data.operations.some((op: any) =>
           (opId && op.id === opId) ||
@@ -443,7 +572,13 @@ function setupIPC() {
         added++;
       }
 
-      db.save();
+      if (added > 0) {
+        if (!db.save()) {
+          db.data.operations = db.data.operations.slice(0, db.data.operations.length - added);
+          db.load();
+          return { success: false, reason: 'DATABASE_SAVE_FAILED' };
+        }
+      }
       return { success: true, added, ignored };
     } catch (err: any) {
       return { success: false, reason: 'error', message: err.message };
@@ -482,7 +617,11 @@ function setupIPC() {
 
         const techName = String(row[10] || '').trim();
         let tech = db.data.technicians.find((t: any) => t.name === techName);
-        let techId = tech ? tech.id : (db.data.technicians[0]?.id || 1);
+        if (!tech) {
+          ignored++;
+          continue; // P0-5: reject unknown technician
+        }
+        let techId = tech.id;
 
         const isDuplicate = db.data.operations.some((op: any) =>
           (opId && op.id === opId) ||
@@ -513,7 +652,13 @@ function setupIPC() {
         added++;
       }
 
-      db.save();
+      if (added > 0) {
+        if (!db.save()) {
+          db.data.operations = db.data.operations.slice(0, db.data.operations.length - added);
+          db.load();
+          return { success: false, reason: 'DATABASE_SAVE_FAILED' };
+        }
+      }
       return { success: true, added, ignored };
     } catch (err: any) {
       return { success: false, reason: 'error', message: err.message };
@@ -658,30 +803,51 @@ function setupIPC() {
 
   // Monthly Settlement
   ipcMain.handle('close-month', (_, newCapital) => {
+    // Validate newCapital
+    if (typeof newCapital !== 'number' || !Number.isFinite(newCapital) || Number.isNaN(newCapital) || newCapital < 0) {
+      return { success: false, reason: 'INVALID_NEW_CAPITAL' };
+    }
+
     const currentMonth = getCurrentMonth();
+    const oldIsClosed = currentMonth.is_closed;
+    const oldClosedAt = currentMonth.closed_at;
+    
     currentMonth.is_closed = true;
     currentMonth.closed_at = new Date().toISOString();
 
     const newMonthId = Math.max(...db.data.months.map((m: any) => m.id)) + 1;
-    db.data.months.push({
+    const newMonth = {
       id: newMonthId,
       month_name: new Date().toLocaleDateString('ar-EG', { month: 'long', year: 'numeric' }),
       start_capital: newCapital,
       is_closed: false,
       created_at: new Date().toISOString(),
       closed_at: null
-    });
+    };
+    db.data.months.push(newMonth);
 
-    db.save();
-    return true;
+    if (!db.save()) {
+      currentMonth.is_closed = oldIsClosed;
+      currentMonth.closed_at = oldClosedAt;
+      db.data.months.pop();
+      db.load();
+      return { success: false, reason: 'MONTH_CLOSE_SAVE_FAILED' };
+    }
+    return { success: true };
   });
 
   ipcMain.handle('close-month-with-excel', async (_, newCapital) => {
+    // Validate newCapital
+    if (typeof newCapital !== 'number' || !Number.isFinite(newCapital) || Number.isNaN(newCapital) || newCapital < 0) {
+      return { success: false, reason: 'INVALID_NEW_CAPITAL' };
+    }
+
     const currentMonth = getCurrentMonth();
 
     const ops = db.data.operations.filter((op: any) => op.month_id === currentMonth.id || op.paid_in_month_id === currentMonth.id);
-    const debts = db.data.operations.filter((op: any) => op.payment_status === 'debt');
-    const tiedCapital = debts.reduce((sum: number, op: any) => sum + (op.cost || 0), 0);
+    const allDebts = db.data.operations.filter((op: any) => op.payment_status === 'debt');
+    const currentMonthDebts = allDebts.filter((op: any) => op.month_id === currentMonth.id);
+    const tiedCapital = currentMonthDebts.reduce((sum: number, op: any) => sum + (op.cost || 0), 0);
     const availableCapital = currentMonth.start_capital - tiedCapital;
 
     const cashOps = ops.filter((op: any) => op.payment_status === 'cash' && !op.paid_in_month_id);
@@ -697,7 +863,7 @@ function setupIPC() {
       .reduce((sum: number, w: any) => sum + (w.amount || 0), 0);
 
     const totalTechProfit = ops.reduce((sum: number, op: any) => sum + (op.tech_profit || 0), 0);
-    const debtTotal = debts.reduce((sum: number, op: any) => sum + (op.price || 0), 0);
+    const debtTotal = allDebts.reduce((sum: number, op: any) => sum + (op.price || 0), 0);
 
     const summaryData = [
       ["تقرير شهر", currentMonth.date],
@@ -761,20 +927,30 @@ function setupIPC() {
     }
 
     // Perform month reset
+    const oldIsClosed = currentMonth.is_closed;
+    const oldClosedAt = currentMonth.closed_at;
+    
     currentMonth.is_closed = true;
     currentMonth.closed_at = new Date().toISOString();
 
     const newMonthId = Date.now();
-    db.data.months.push({
+    const newMonth = {
       id: newMonthId,
       month_name: new Date().toLocaleDateString('ar-EG', { month: 'long', year: 'numeric' }),
       start_capital: newCapital,
       is_closed: false,
       created_at: new Date().toISOString(),
       closed_at: null
-    });
+    };
+    db.data.months.push(newMonth);
 
-    db.save();
+    if (!db.save()) {
+      currentMonth.is_closed = oldIsClosed;
+      currentMonth.closed_at = oldClosedAt;
+      db.data.months.pop();
+      db.load();
+      return { success: false, reason: 'MONTH_CLOSE_SAVE_FAILED' };
+    }
     return { success: true };
   });
 
@@ -787,18 +963,27 @@ function setupIPC() {
     if (!db.data.scrap_devices) db.data.scrap_devices = [];
     const newId = Date.now();
     db.data.scrap_devices.push({ id: newId, ...data });
-    db.save();
-    return true;
+    if (!db.save()) {
+      db.data.scrap_devices.pop();
+      db.load();
+      return { success: false, reason: 'DATABASE_SAVE_FAILED' };
+    }
+    return { success: true };
   });
 
   ipcMain.handle('edit-scrap-device', (_, id, data) => {
     const idx = db.data.scrap_devices.findIndex((d: any) => d.id === id);
     if (idx !== -1) {
-      db.data.scrap_devices[idx] = { ...db.data.scrap_devices[idx], ...data };
-      db.save();
-      return true;
+      const oldD = { ...db.data.scrap_devices[idx] };
+      db.data.scrap_devices[idx] = { ...oldD, ...data };
+      if (!db.save()) {
+        db.data.scrap_devices[idx] = oldD;
+        db.load();
+        return { success: false, reason: 'DATABASE_SAVE_FAILED' };
+      }
+      return { success: true };
     }
-    return false;
+    return { success: false, reason: 'NOT_FOUND' };
   });
 
   ipcMain.handle('delete-scrap-device', (_, id) => {
@@ -824,20 +1009,29 @@ function setupIPC() {
     if (!db.data[targetArray]) db.data[targetArray] = [];
     if (!db.data[targetArray].includes(item)) {
       db.data[targetArray].push(item);
-      db.save();
-      return true;
+      if (!db.save()) {
+        db.data[targetArray].pop();
+        db.load();
+        return { success: false, reason: 'DATABASE_SAVE_FAILED' };
+      }
+      return { success: true };
     }
-    return false;
+    return { success: false, reason: 'ALREADY_EXISTS' };
   });
 
   ipcMain.handle('remove-quick-list-item', (_, type: 'device' | 'fault', item: string) => {
     const targetArray = type === 'device' ? 'common_devices' : 'common_faults';
     if (db.data[targetArray]) {
+      const oldArray = [...db.data[targetArray]];
       db.data[targetArray] = db.data[targetArray].filter((i: string) => i !== item);
-      db.save();
-      return true;
+      if (!db.save()) {
+        db.data[targetArray] = oldArray;
+        db.load();
+        return { success: false, reason: 'DATABASE_SAVE_FAILED' };
+      }
+      return { success: true };
     }
-    return false;
+    return { success: false, reason: 'NOT_FOUND' };
   });
 
   ipcMain.handle('create-full-backup', async () => {
