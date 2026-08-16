@@ -56,12 +56,24 @@ app.on('window-all-closed', () => {
 function getCurrentMonth() {
   const m = db.data.months[db.data.months.length - 1];
   if (!m) {
-    const nextDate = new Date().toLocaleDateString('en-GB');
-    db.data.months.push({ id: 1, start_capital: 0, date: nextDate });
+    const nextMonthName = new Date().toLocaleDateString('ar-EG', { month: 'long', year: 'numeric' });
+    db.data.months.push({ 
+      id: 1, 
+      start_capital: 0, 
+      month_name: nextMonthName,
+      is_closed: false,
+      created_at: new Date().toISOString(),
+      closed_at: null
+    });
     db.save();
     return db.data.months[0];
   }
   return m;
+}
+
+function generateMonthId() {
+  if (!db.data.months || db.data.months.length === 0) return 1;
+  return Math.max(...db.data.months.map((m: any) => m.id)) + 1;
 }
 
 // Old autoBackupDaily logic replaced by centralized backup service
@@ -672,6 +684,7 @@ function setupIPC() {
       let updated = 0;
       let ignored = 0;
       if (!db.data.ic_compatibilities) db.data.ic_compatibilities = [];
+      const previousCompatibilities = JSON.parse(JSON.stringify(db.data.ic_compatibilities));
       let maxId = db.data.ic_compatibilities.reduce((max: number, ic: any) => Math.max(max, ic.id), 0);
 
       // Process rows: assume standard Category, IC, Devices format
@@ -719,7 +732,11 @@ function setupIPC() {
         }
       }
 
-      db.save();
+      if (!db.save()) {
+        db.data.ic_compatibilities = previousCompatibilities;
+        db.load();
+        return { success: false, reason: 'IC_IMPORT_SAVE_FAILED' };
+      }
       return { success: true, added, updated, ignored };
     } catch (err: any) {
       return { success: false, reason: 'error', message: err.message };
@@ -815,7 +832,7 @@ function setupIPC() {
     currentMonth.is_closed = true;
     currentMonth.closed_at = new Date().toISOString();
 
-    const newMonthId = Math.max(...db.data.months.map((m: any) => m.id)) + 1;
+    const newMonthId = generateMonthId();
     const newMonth = {
       id: newMonthId,
       month_name: new Date().toLocaleDateString('ar-EG', { month: 'long', year: 'numeric' }),
@@ -866,7 +883,7 @@ function setupIPC() {
     const debtTotal = allDebts.reduce((sum: number, op: any) => sum + (op.price || 0), 0);
 
     const summaryData = [
-      ["تقرير شهر", currentMonth.date],
+      ["تقرير شهر", currentMonth.month_name || currentMonth.date || ''],
       [""],
       ["رأس المال الأساسي", currentMonth.start_capital],
       ["رأس المال المسترد فعلياً", availableCapital],
@@ -908,7 +925,7 @@ function setupIPC() {
     xlsx.utils.book_append_sheet(wb, wsSummary, "الخلاصة");
     xlsx.utils.book_append_sheet(wb, wsOps, "سجل العمليات");
 
-    const defaultPath = `Settlement_${currentMonth.date}.xlsx`.replace(/\//g, '-');
+    const defaultPath = `Settlement_${currentMonth.month_name || currentMonth.date || 'unknown'}.xlsx`.replace(/\//g, '-');
     const { canceled, filePath } = await dialog.showSaveDialog({
       title: 'حفظ نسخة احتياطية للتقفيل الشهري',
       defaultPath: defaultPath,
@@ -933,7 +950,7 @@ function setupIPC() {
     currentMonth.is_closed = true;
     currentMonth.closed_at = new Date().toISOString();
 
-    const newMonthId = Date.now();
+    const newMonthId = generateMonthId();
     const newMonth = {
       id: newMonthId,
       month_name: new Date().toLocaleDateString('ar-EG', { month: 'long', year: 'numeric' }),
@@ -989,11 +1006,17 @@ function setupIPC() {
   ipcMain.handle('delete-scrap-device', (_, id) => {
     const idx = db.data.scrap_devices.findIndex((d: any) => d.id === id);
     if (idx !== -1) {
+      const deletedItem = db.data.scrap_devices[idx];
       db.data.scrap_devices.splice(idx, 1);
-      db.save();
-      return true;
+      
+      if (!db.save()) {
+        db.data.scrap_devices.splice(idx, 0, deletedItem);
+        db.load();
+        return { success: false, reason: 'SCRAP_DEVICE_DELETE_SAVE_FAILED' };
+      }
+      return { success: true };
     }
-    return false;
+    return { success: false, reason: 'NOT_FOUND' };
   });
 
   // Quick Lists
