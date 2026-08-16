@@ -32,7 +32,12 @@ function createWindow() {
   mainWindow.maximize();
 
   // Run automatic migration from legacy paths if necessary
-  runAutomaticMigration();
+  const migrationSuccess = runAutomaticMigration();
+  if (!migrationSuccess) {
+    console.error('Migration failed. Halting application startup to prevent data loss.');
+    app.quit();
+    return;
+  }
 
   initDB();
   setupIPC();
