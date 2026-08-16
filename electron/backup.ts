@@ -213,6 +213,14 @@ export function readBackup(filename: string): { data: any, fileHash?: string } {
   if (!validateSchema(dbData)) {
     throw new Error('BACKUP_INVALID_SCHEMA');
   }
+
+  // Backup Integrity Validation
+  if (fileHash) {
+    const calculatedHash = getCanonicalDatabaseHash(dbData);
+    if (fileHash !== calculatedHash) {
+      throw new Error('BACKUP_HASH_MISMATCH');
+    }
+  }
   
   return { data: dbData, fileHash };
 }

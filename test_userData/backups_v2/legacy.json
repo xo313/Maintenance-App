@@ -1,1 +1,0 @@
-{"backup_version":1,"created_at":"old","database":{"settings":{},"months":[{"id":1},{"id":2}],"operations":[{"id":100,"cost":50,"price":100,"name":"TEST-A"},{"id":101,"cost":20,"price":50,"name":"TEST-B"}],"technicians":[{"id":1},{"id":2}],"withdrawals":[{"id":1},{"id":2}]}}

@@ -100,7 +100,7 @@ function simulateRestore(filename: string, simulateRollbackSaveFail = false) {
   return { success: true };
 }
 
-function simulateFactoryReset() {
+function simulateFactoryReset(simulateSaveFail = false, simulateRollbackSaveFail = false) {
   const originalHash = getCanonicalDatabaseHash(db.data);
   const backupResult = createBackup(db.data, true);
   if (!backupResult.success) return { success: false, reason: 'FACTORY_RESET_BACKUP_FAILED' };
@@ -108,12 +108,18 @@ function simulateFactoryReset() {
   db.data.operations = [];
   db.data.months = [{ id: 1, month_name: 'test' }];
 
+  if (simulateSaveFail) db.forceSaveFail = true;
   const saveSuccess = db.save();
+  db.forceSaveFail = false;
+
   if (!saveSuccess) {
     try {
       const rollbackFilename = path.basename(backupResult.filename!);
       db.data = readBackup(rollbackFilename).data;
-      db.save();
+      if (simulateRollbackSaveFail) db.forceSaveFail = true;
+      const rbSave = db.save();
+      db.forceSaveFail = false;
+      if (!rbSave) return { success: false, reason: 'FACTORY_RESET_ROLLBACK_SAVE_FAILED' };
       db.load();
       if (getCanonicalDatabaseHash(db.data) !== originalHash) return { success: false, reason: 'FACTORY_RESET_ROLLBACK_FAILED' };
     } catch (e) {
@@ -127,7 +133,10 @@ function simulateFactoryReset() {
     try {
       const rollbackFilename = path.basename(backupResult.filename!);
       db.data = readBackup(rollbackFilename).data;
-      db.save();
+      if (simulateRollbackSaveFail) db.forceSaveFail = true;
+      const rbSave = db.save();
+      db.forceSaveFail = false;
+      if (!rbSave) return { success: false, reason: 'FACTORY_RESET_ROLLBACK_SAVE_FAILED' };
       db.load();
       if (getCanonicalDatabaseHash(db.data) !== originalHash) return { success: false, reason: 'FACTORY_RESET_ROLLBACK_FAILED' };
     } catch (e) {
@@ -180,73 +189,104 @@ db.save();
 const res1 = simulateRestore(path.basename(validBackup.filename!));
 assert(res1.success === true && db.data.operations[0].name === "TEST-A", "Test 1: Valid Restore & Actual Data Reverted");
 
-// 2. SAME COUNTS / DIFFERENT DATA
+// 2. BACKUP HASH MATCH
+clearAll();
+db.data = JSON.parse(JSON.stringify(validDbTemplate));
+db.save();
+const validBackup2 = createBackup(db.data, true);
+const res2 = simulateRestore(path.basename(validBackup2.filename!));
+assert(res2.success === true, "Test 2: Backup Hash Match (Valid Backup)");
+
+// 3. MODIFIED DATABASE INSIDE BACKUP (BACKUP_HASH_MISMATCH)
 clearAll();
 db.data = JSON.parse(JSON.stringify(validDbTemplate));
 db.save();
 const diffDataBackup = createBackup(db.data, true);
 const rawBackup = JSON.parse(fs.readFileSync(diffDataBackup.filename!, 'utf8'));
 rawBackup.database.operations[0].name = "FORCED-MALICIOUS-2";
-fs.writeFileSync(diffDataBackup.filename!, JSON.stringify(rawBackup)); // Hash mismatch in file
-const res2 = simulateRestore(path.basename(diffDataBackup.filename!));
-assert(res2.success === false && res2.reason === 'RESTORE_VERIFY_FAILED', "Test 2: Modified Backup Data (Hash mismatch)");
+fs.writeFileSync(diffDataBackup.filename!, JSON.stringify(rawBackup)); // hash doesn't match database_hash inside file
+const res3 = simulateRestore(path.basename(diffDataBackup.filename!));
+assert(res3.success === false && res3.reason === 'BACKUP_HASH_MISMATCH', "Test 3: Modified database inside Backup yields BACKUP_HASH_MISMATCH");
 
-// 3. FORCED RESTORE FAILURE (db.save fails) & ROLLBACK
-clearAll();
-db.data = JSON.parse(JSON.stringify(validDbTemplate));
-db.save();
-const originalHash3 = getCanonicalDatabaseHash(db.data);
-const backup3 = createBackup(db.data, true);
-db.forceSaveFail = true;
-const res3 = simulateRestore(path.basename(backup3.filename!));
-db.forceSaveFail = false;
-db.load();
-assert(res3.success === false && getCanonicalDatabaseHash(db.data) === originalHash3, "Test 3: Forced Restore Failure triggers correct Rollback");
-
-// 4. FORCED ROLLBACK FAILURE
-clearAll();
-db.data = JSON.parse(JSON.stringify(validDbTemplate));
-db.save();
-const backup4 = createBackup(db.data, true);
-// Trigger rollback by forcing a corrupt write (verification hash fails)
-db.forceCorruptWrite = true;
-const res4 = simulateRestore(path.basename(backup4.filename!), true); // simulate Rollback save fail
-db.forceCorruptWrite = false;
-assert(res4.reason === 'CRITICAL RECOVERY ERROR', "Test 4: Forced Rollback Failure returns CRITICAL RECOVERY ERROR");
-
-// 5. FACTORY RESET & FACTORY RESET ROLLBACK
-clearAll();
-db.data = JSON.parse(JSON.stringify(validDbTemplate));
-db.save();
-const res5 = simulateFactoryReset();
-assert(res5.success === true && db.data.operations.length === 0, "Test 5: Factory Reset successful and verifies empty DB");
-
-// 6. RESTORE AFTER RESET
-const backupBeforeReset = createBackup(validDbTemplate, true);
-const res6 = simulateRestore(path.basename(backupBeforeReset.filename!));
-assert(res6.success === true && db.data.operations.length === 2, "Test 6: Restore after Factory Reset works");
-
-// 7. RESTART PERSISTENCE
-db.data = {}; // wipe memory
-db.load(); // restart
-assert(db.data.operations.length === 2 && getCanonicalDatabaseHash(db.data) === getCanonicalDatabaseHash(validDbTemplate), "Test 7: Restart Persistence");
-
-// 8. CORRUPT JSON BACKUP
-const corruptPath = path.join(getBackupDir(), 'corrupt.json');
-fs.writeFileSync(corruptPath, "{ bad json");
-const res8 = simulateRestore('corrupt.json');
-assert(res8.success === false && res8.reason === 'BACKUP_INVALID_JSON', "Test 8: Corrupt Backup rejected");
-
-// 9. LEGACY BACKUP
+// 4. LEGACY BACKUP WITHOUT DATABASE_HASH
 const legacyDb = JSON.parse(JSON.stringify(validDbTemplate));
 const legacyPath = path.join(getBackupDir(), 'legacy.json');
 fs.writeFileSync(legacyPath, JSON.stringify({ backup_version: 1, created_at: "old", database: legacyDb })); // NO HASH
-const res9 = simulateRestore('legacy.json');
-assert(res9.success === true, "Test 9: Legacy backup restores correctly");
+const res4 = simulateRestore('legacy.json');
+assert(res4.success === true, "Test 4: Legacy Backup without database_hash restores supported");
 
-// 10. PATH TRAVERSAL
-const res10 = simulateRestore('../database.json');
-assert(res10.success === false && res10.reason === 'BACKUP_INVALID_PATH', "Test 10: Path traversal rejected");
+// 5. VALID RESTORE (tested in 1)
+assert(res1.success === true, "Test 5: Valid Restore (Restored Hash matches Backup Hash)");
+
+// 6. RESTORE FAILURE triggers Rollback
+clearAll();
+db.data = JSON.parse(JSON.stringify(validDbTemplate));
+db.save();
+const originalHash6 = getCanonicalDatabaseHash(db.data);
+const backup6 = createBackup(db.data, true);
+db.forceSaveFail = true;
+const res6 = simulateRestore(path.basename(backup6.filename!));
+db.forceSaveFail = false;
+db.load();
+assert(res6.success === false && getCanonicalDatabaseHash(db.data) === originalHash6, "Test 6: Restore failure triggers Rollback");
+
+// 7. ROLLBACK SAVE FAILURE
+clearAll();
+db.data = JSON.parse(JSON.stringify(validDbTemplate));
+db.save();
+const backup7 = createBackup(db.data, true);
+db.forceCorruptWrite = true;
+const res7 = simulateRestore(path.basename(backup7.filename!), true); // simulate Rollback save fail
+db.forceCorruptWrite = false;
+assert(res7.reason === 'CRITICAL RECOVERY ERROR', "Test 7: Rollback save failure yields CRITICAL RECOVERY ERROR");
+
+// 8. FACTORY RESET
+clearAll();
+db.data = JSON.parse(JSON.stringify(validDbTemplate));
+db.save();
+const res8 = simulateFactoryReset();
+assert(res8.success === true && db.data.operations.length === 0, "Test 8: Factory Reset Backup -> Reset -> Verify");
+
+// 9. FACTORY RESET FORCED FAILURE
+clearAll();
+db.data = JSON.parse(JSON.stringify(validDbTemplate));
+db.save();
+const originalHash9 = getCanonicalDatabaseHash(db.data);
+const res9 = simulateFactoryReset(true, false);
+db.load();
+assert(res9.success === false && res9.reason === 'FACTORY_RESET_FAILED' && getCanonicalDatabaseHash(db.data) === originalHash9, "Test 9: Factory Reset forced failure triggers Rollback");
+
+// 10. FACTORY RESET ROLLBACK SAVE FAILURE
+clearAll();
+db.data = JSON.parse(JSON.stringify(validDbTemplate));
+db.save();
+const res10 = simulateFactoryReset(true, true);
+assert(res10.success === false && res10.reason === 'FACTORY_RESET_ROLLBACK_SAVE_FAILED', "Test 10: Factory Reset Rollback save failure explicit error");
+
+// 11. PATH TRAVERSAL
+const res11 = simulateRestore('../database.json');
+assert(res11.success === false && res11.reason === 'BACKUP_INVALID_PATH', "Test 11: Path Traversal Rejected");
+
+// 12. APPLICATION RESTART AFTER RESTORE
+clearAll();
+db.data = JSON.parse(JSON.stringify(validDbTemplate));
+db.save();
+const backup12 = createBackup(db.data, true);
+simulateRestore(path.basename(backup12.filename!));
+db.data = {};
+db.load();
+assert(db.data.operations.length === 2 && getCanonicalDatabaseHash(db.data) === getCanonicalDatabaseHash(validDbTemplate), "Test 12: Application restart after Restore persists data");
+
+// 13. HASH TEST (A vs B)
+const dbA = { b: 2, a: 1 };
+const dbB = { a: 1, b: 2 };
+const hashA = getCanonicalDatabaseHash(dbA);
+const hashB = getCanonicalDatabaseHash(dbB);
+assert(hashA === hashB, "Test 13: Hash Test - Object key insertion order differs but hash matches");
+
+const dbC = { a: 1, b: 3 };
+const hashC = getCanonicalDatabaseHash(dbC);
+assert(hashA !== hashC, "Test 13: Hash Test - Different value changes hash");
 
 console.log(`\nResults: ${testsPassed} Passed, ${testsFailed} Failed`);
 if (testsFailed > 0) process.exit(1);

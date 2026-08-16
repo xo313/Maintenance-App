@@ -103,7 +103,9 @@ export default function Settings() {
         alert('تمت استعادة النسخة الاحتياطية بنجاح.');
         (window as any).api.restartApp();
       } else {
-        if (res.reason === 'RESTORE_VERIFY_FAILED' || res.reason === 'RESTORE_ROLLBACK_FAILED') {
+        if (res.reason === 'BACKUP_HASH_MISMATCH') {
+          alert('النسخة الاحتياطية تالفة أو تم تعديلها، لذلك لم يتم تنفيذ الاستعادة.');
+        } else if (res.reason === 'RESTORE_VERIFY_FAILED' || res.reason === 'RESTORE_ROLLBACK_FAILED') {
           alert('فشلت الاستعادة وتمت إعادة البيانات السابقة.');
         } else {
           alert('فشلت عملية الاستعادة. لم يتم تغيير البيانات الحالية.');

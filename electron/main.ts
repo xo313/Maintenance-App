@@ -989,7 +989,8 @@ function setupIPC() {
         const rollbackFilename = path.basename(backupResult.filename!);
         const rollbackData = readBackup(rollbackFilename).data;
         db.data = rollbackData;
-        db.save();
+        const rbSave = db.save();
+        if (!rbSave) return { success: false, reason: 'FACTORY_RESET_ROLLBACK_SAVE_FAILED', message: 'CRITICAL RECOVERY ERROR' };
         db.load();
         
         const rollbackHash = getCanonicalDatabaseHash(db.data);
@@ -1010,7 +1011,8 @@ function setupIPC() {
         const rollbackFilename = path.basename(backupResult.filename!);
         const rollbackData = readBackup(rollbackFilename).data;
         db.data = rollbackData;
-        db.save();
+        const rbSave = db.save();
+        if (!rbSave) return { success: false, reason: 'FACTORY_RESET_ROLLBACK_SAVE_FAILED', message: 'CRITICAL RECOVERY ERROR' };
         db.load();
         
         const rollbackHash = getCanonicalDatabaseHash(db.data);
