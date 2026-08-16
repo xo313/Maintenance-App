@@ -24,10 +24,12 @@ export default function Operations() {
 
   const [deviceName, setDeviceName] = useState<string>('');
   const [faultType, setFaultType] = useState<string>('');
+  const [faults, setFaults] = useState<string[]>([]);
 
   const [price, setPrice] = useState<string>('');
   const [cost, setCost] = useState<string>('');
   const [paymentStatus, setPaymentStatus] = useState<'cash' | 'debt'>('cash');
+  const [status, setStatus] = useState<'under_maintenance' | 'completed' | 'delivered'>('under_maintenance');
 
   // Edit state
   const [editingOp, setEditingOp] = useState<Operation | null>(null);
@@ -37,10 +39,15 @@ export default function Operations() {
 
   const [editDeviceName, setEditDeviceName] = useState<string>('');
   const [editFaultType, setEditFaultType] = useState<string>('');
+  const [editFaults, setEditFaults] = useState<string[]>([]);
 
   const [editPrice, setEditPrice] = useState<string>('');
   const [editCost, setEditCost] = useState<string>('');
   const [editPaymentStatus, setEditPaymentStatus] = useState<'cash' | 'debt'>('cash');
+  const [editStatus, setEditStatus] = useState<'under_maintenance' | 'completed' | 'delivered'>('under_maintenance');
+
+  const [confirmAction, setConfirmAction] = useState<{ message: string; onConfirm: () => void } | null>(null);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   const loadData = async () => {
     const ops = await (window as any).api.getOperations();
@@ -68,61 +75,93 @@ export default function Operations() {
     const s = parseFloat(price);
     const p = parseFloat(cost || '0');
 
-    if (p > s) {
-      if (!confirm('تنبيه: التكلفة (المشتريات) أعلى من المبيعات! هل أنت متأكد من تسجيل العملية بخسارة؟')) {
-        return;
+    const executeSubmit = async () => {
+      const net_profit = s - p;
+      const tech_profit = Number((net_profit * selectedTech.profit_percentage).toFixed(2));
+      const shop_profit = Number((net_profit - tech_profit).toFixed(2));
+
+      let finalFaults = [...faults];
+      if (faultType.trim() && !finalFaults.includes(faultType.trim())) {
+        finalFaults.push(faultType.trim());
       }
+
+      await (window as any).api.addOperation({
+        technician_id: Number(techId),
+        customer_name: customerName,
+        customer_phone: customerPhone,
+        device: deviceName.trim(),
+        faults: finalFaults,
+        price: s,
+        cost: p,
+        shop_profit,
+        tech_profit,
+        payment_status: paymentStatus,
+        status: status
+      });
+
+      setDeviceName('');
+      setFaultType('');
+      setFaults([]);
+      setPrice('');
+      setCost('');
+      setCustomerName('');
+      setCustomerPhone('');
+      setStatus('under_maintenance');
+      setPaymentStatus('cash');
+      loadData();
+      setToastMessage('تم تسجيل العملية بنجاح');
+      setTimeout(() => setToastMessage(null), 3000);
+    };
+
+    if (p > s) {
+      setConfirmAction({
+        message: 'تنبيه: التكلفة (المشتريات) أعلى من المبيعات! هل أنت متأكد من تسجيل العملية بخسارة؟',
+        onConfirm: executeSubmit
+      });
+      return;
     }
 
-    const net_profit = s - p;
-    const tech_profit = Number((net_profit * selectedTech.profit_percentage).toFixed(2));
-    const shop_profit = Number((net_profit - tech_profit).toFixed(2));
-
-    const combinedDevice = [deviceName.trim(), faultType.trim()].filter(Boolean).join(' - ');
-
-    await (window as any).api.addOperation({
-      technician_id: Number(techId),
-      customer_name: customerName,
-      customer_phone: customerPhone,
-      device: combinedDevice,
-      price: s,
-      cost: p,
-      shop_profit,
-      tech_profit,
-      payment_status: paymentStatus
-    });
-
-    setCustomerName('');
-    setCustomerPhone('');
-    setDeviceName('');
-    setFaultType('');
-    setPrice('');
-    setCost('');
-    setPaymentStatus('cash');
-    loadData();
+    executeSubmit();
   };
 
   const handleEditClick = (op: Operation) => {
-    setEditingOp(op);
-    setEditTechId(op.technician_id);
-    setEditCustomerName(op.customer_name || '');
-    setEditCustomerPhone(op.customer_phone || '');
+    try {
+      setEditingOp(op);
+      setEditTechId(op.technician_id);
+      setEditCustomerName(op.customer_name || '');
+      setEditCustomerPhone(op.customer_phone || '');
+      
+      let dName = String(op.device || '');
+      let fList: string[] = [];
+      if (Array.isArray(op.faults)) {
+        fList = op.faults;
+      } else if (typeof op.faults === 'string') {
+        fList = [op.faults];
+      } else if (typeof (op as any).fault === 'string') {
+        fList = [(op as any).fault];
+      }
+      
+      if (fList.length === 0 && dName.includes(' - ')) {
+        const parts = dName.split(' - ');
+        dName = parts[0];
+        fList = [parts.slice(1).join(' - ')];
+      }
 
-    // Split combined device into device and fault if possible
-    let dName = op.device || '';
-    let fType = '';
-    if (dName.includes(' - ')) {
-      const parts = dName.split(' - ');
-      dName = parts[0];
-      fType = parts.slice(1).join(' - ');
+      setEditDeviceName(dName);
+      setEditFaultType('');
+      setEditFaults(fList);
+      setEditPrice(op.price ? String(op.price) : '0');
+      setEditCost(op.cost ? String(op.cost) : (typeof (op as any).spare_parts_cost === 'number' ? String((op as any).spare_parts_cost) : '0'));
+      setEditPaymentStatus(op.payment_status || 'cash');
+      
+      let initialStatus = op.status;
+      if (!initialStatus) {
+        initialStatus = 'completed'; 
+      }
+      setEditStatus(initialStatus);
+    } catch (err: any) {
+      alert("خطأ أثناء فتح النافذة: " + err.message);
     }
-
-    setEditDeviceName(dName);
-    setEditFaultType(fType);
-
-    setEditPrice(op.price ? op.price.toString() : '0');
-    setEditCost(op.cost ? op.cost.toString() : '0');
-    setEditPaymentStatus(op.payment_status);
   };
 
   const handleSaveEdit = async () => {
@@ -134,32 +173,43 @@ export default function Operations() {
     const s = parseFloat(editPrice);
     const p = parseFloat(editCost || '0');
 
-    if (p > s) {
-      if (!confirm('تنبيه: التكلفة (المشتريات) أعلى من المبيعات! هل أنت متأكد من حفظ العملية بخسارة؟')) {
-        return;
+    const executeEdit = async () => {
+      const net_profit = s - p;
+      const tech_profit = Number((net_profit * selectedTech.profit_percentage).toFixed(2));
+      const shop_profit = Number((net_profit - tech_profit).toFixed(2));
+
+      let finalEditFaults = [...editFaults];
+      if (editFaultType.trim() && !finalEditFaults.includes(editFaultType.trim())) {
+        finalEditFaults.push(editFaultType.trim());
       }
+
+      await (window as any).api.editOperation(editingOp.id, {
+        technician_id: Number(editTechId),
+        customer_name: editCustomerName,
+        customer_phone: editCustomerPhone,
+        device: editDeviceName.trim(),
+        faults: finalEditFaults,
+        price: s,
+        cost: p,
+        shop_profit,
+        tech_profit,
+        payment_status: editPaymentStatus,
+        status: editStatus
+      });
+
+      setEditingOp(null);
+      loadData();
+    };
+
+    if (p > s) {
+      setConfirmAction({
+        message: 'تنبيه: التكلفة (المشتريات) أعلى من المبيعات! هل أنت متأكد من حفظ العملية بخسارة؟',
+        onConfirm: executeEdit
+      });
+      return;
     }
 
-    const net_profit = s - p;
-    const tech_profit = Number((net_profit * selectedTech.profit_percentage).toFixed(2));
-    const shop_profit = Number((net_profit - tech_profit).toFixed(2));
-
-    const combinedDevice = [editDeviceName.trim(), editFaultType.trim()].filter(Boolean).join(' - ');
-
-    await (window as any).api.editOperation(editingOp.id, {
-      technician_id: Number(editTechId),
-      customer_name: editCustomerName,
-      customer_phone: editCustomerPhone,
-      device: combinedDevice,
-      price: s,
-      cost: p,
-      shop_profit,
-      tech_profit,
-      payment_status: editPaymentStatus
-    });
-
-    setEditingOp(null);
-    loadData();
+    executeEdit();
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -204,12 +254,18 @@ export default function Operations() {
 
     let text = settings?.whatsapp_template || `السلام عليكم [اسم_الزبون]
 نود إعلامك بأن جهازك ([اسم_الجهاز]) قد تمت صيانته وهو جاهز للاستلام.
-المبلغ المطلوب: [المبلغ] دينار.
-شكراً لاختيارك مركزنا!`;
+المشكلة: [المشكلة]
+المبلغ المطلوب: [المبلغ]
+شكراً لاختيارك [اسم_المحل]!`;
 
     text = text.replace(/\[اسم_الزبون\]/g, op.customer_name || 'عميلنا العزيز');
     text = text.replace(/\[اسم_الجهاز\]/g, op.device || '-');
+    
+    const faultsText = op.faults && op.faults.length > 0 ? op.faults.join('، ') : 'غير محدد';
+    text = text.replace(/\[المشكلة\]/g, faultsText);
+    
     text = text.replace(/\[المبلغ\]/g, op.price ? op.price.toString() : '0');
+    text = text.replace(/\[اسم_المحل\]/g, settings?.shop_name || 'مركز الصيانة');
 
     const encodedMessage = encodeURIComponent(text);
     const url = `https://wa.me/${formattedPhone}?text=${encodedMessage}`;
@@ -273,13 +329,45 @@ export default function Operations() {
           </div>
 
           <div className="form-group" style={{ marginBottom: 0 }}>
-            <label>نوع العطل</label>
-            <select value={faultType} onChange={e => setFaultType(e.target.value)} required>
-              <option value="" disabled>اختر العطل...</option>
-              {quickFaults.map((f, idx) => (
-                <option key={idx} value={f}>{f}</option>
+            <label>الأعطال (اضغط Enter للإضافة)</label>
+            <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
+              <input 
+                type="text" 
+                list="quick-faults" 
+                value={faultType} 
+                onChange={e => setFaultType(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    if (faultType.trim() && !faults.includes(faultType.trim())) {
+                      setFaults([...faults, faultType.trim()]);
+                      setFaultType('');
+                    }
+                  }
+                }}
+                placeholder="اختر أو اكتب العطل" 
+              />
+              <button 
+                type="button" 
+                className="btn btn-primary" 
+                onClick={() => {
+                  if (faultType.trim() && !faults.includes(faultType.trim())) {
+                    setFaults([...faults, faultType.trim()]);
+                    setFaultType('');
+                  }
+                }}
+              >
+                إضافة
+              </button>
+            </div>
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+              {faults.map((f, i) => (
+                <span key={i} className="badge" style={{ display: 'flex', alignItems: 'center', gap: '4px', background: 'var(--primary-light)', color: 'var(--primary)', padding: '4px 8px', borderRadius: '4px' }}>
+                  {f}
+                  <button type="button" style={{ background: 'none', border: 'none', color: 'var(--danger)', cursor: 'pointer', padding: '0 4px', fontSize: '1.2rem', lineHeight: 1 }} onClick={() => setFaults(faults.filter(x => x !== f))}>&times;</button>
+                </span>
               ))}
-            </select>
+            </div>
           </div>
 
           <div className="form-group" style={{ marginBottom: 0 }}>
@@ -290,6 +378,15 @@ export default function Operations() {
           <div className="form-group" style={{ marginBottom: 0 }}>
             <label>المشتريات (التكلفة)</label>
             <input type="number" step="0.01" min="0" value={cost} onChange={e => setCost(e.target.value)} placeholder="0.00" />
+          </div>
+
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label>حالة الجهاز</label>
+            <select value={status} onChange={e => setStatus(e.target.value as 'under_maintenance' | 'completed' | 'delivered')} required style={{ fontWeight: 'bold', color: status === 'under_maintenance' ? 'var(--warning)' : status === 'completed' ? '#3b82f6' : 'var(--success)' }}>
+              <option value="under_maintenance">تحت الصيانة 🛠️</option>
+              <option value="completed">مكتمل 🔵</option>
+              <option value="delivered">تم تسليمه ✅</option>
+            </select>
           </div>
 
           <div className="form-group" style={{ marginBottom: 0 }}>
@@ -314,7 +411,8 @@ export default function Operations() {
       </div>
 
       {editingOp && (
-        <div className="stat-card fade-in" style={{ padding: '2rem', marginBottom: '2.5rem', border: '1px solid var(--primary)', background: 'var(--primary-light)' }}>
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '1rem' }}>
+          <div className="stat-card fade-in" style={{ padding: '2rem', width: '100%', maxWidth: '800px', maxHeight: '90vh', overflowY: 'auto', border: '1px solid var(--primary)', background: 'var(--primary-light)', boxShadow: '0 10px 30px rgba(0,0,0,0.3)' }}>
           <h3 style={{ marginBottom: '1.5rem', color: 'var(--primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
             <PenTool size={20} /> تعديل العملية رقم #{editingOp.id}
           </h3>
@@ -344,13 +442,45 @@ export default function Operations() {
             </div>
 
             <div className="form-group" style={{ marginBottom: 0 }}>
-              <label style={{ color: 'var(--text-main)' }}>نوع العطل</label>
-              <select value={editFaultType} onChange={e => setEditFaultType(e.target.value)} required>
-                <option value="" disabled>اختر العطل...</option>
-                {quickFaults.map((f, idx) => (
-                  <option key={idx} value={f}>{f}</option>
+              <label style={{ color: 'var(--text-main)' }}>الأعطال</label>
+              <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
+                <input 
+                  type="text" 
+                  list="quick-faults" 
+                  value={editFaultType} 
+                  onChange={e => setEditFaultType(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      if (editFaultType.trim() && !editFaults.includes(editFaultType.trim())) {
+                        setEditFaults([...editFaults, editFaultType.trim()]);
+                        setEditFaultType('');
+                      }
+                    }
+                  }}
+                  placeholder="اضغط Enter للإضافة" 
+                />
+                <button 
+                  type="button" 
+                  className="btn btn-primary" 
+                  onClick={() => {
+                    if (editFaultType.trim() && !editFaults.includes(editFaultType.trim())) {
+                      setEditFaults([...editFaults, editFaultType.trim()]);
+                      setEditFaultType('');
+                    }
+                  }}
+                >
+                  +
+                </button>
+              </div>
+              <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+                {editFaults.map((f, i) => (
+                  <span key={i} className="badge" style={{ display: 'flex', alignItems: 'center', gap: '4px', background: 'var(--primary-light)', color: 'var(--primary)' }}>
+                    {f}
+                    <button type="button" style={{ background: 'none', border: 'none', color: 'var(--danger)', cursor: 'pointer', padding: '0 4px', fontSize: '1.2rem', lineHeight: 1 }} onClick={() => setEditFaults(editFaults.filter(x => x !== f))}>&times;</button>
+                  </span>
                 ))}
-              </select>
+              </div>
             </div>
 
             <div className="form-group" style={{ marginBottom: 0 }}>
@@ -361,6 +491,15 @@ export default function Operations() {
             <div className="form-group" style={{ marginBottom: 0 }}>
               <label style={{ color: 'var(--text-main)' }}>التكلفة</label>
               <input type="number" step="0.01" min="0" value={editCost} onChange={e => setEditCost(e.target.value)} />
+            </div>
+
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label style={{ color: 'var(--text-main)' }}>حالة الجهاز</label>
+              <select value={editStatus} onChange={e => setEditStatus(e.target.value as 'under_maintenance' | 'completed' | 'delivered')} required style={{ fontWeight: 'bold', color: editStatus === 'under_maintenance' ? 'var(--warning)' : editStatus === 'completed' ? '#3b82f6' : 'var(--success)' }}>
+                <option value="under_maintenance">تحت الصيانة 🛠️</option>
+                <option value="completed">مكتمل 🔵</option>
+                <option value="delivered">تم تسليمه ✅</option>
+              </select>
             </div>
 
             <div className="form-group" style={{ marginBottom: 0 }}>
@@ -376,6 +515,7 @@ export default function Operations() {
               <button className="btn btn-primary" style={{ flex: 1 }} onClick={handleSaveEdit}>حفظ التعديلات</button>
             </div>
           </div>
+        </div>
         </div>
       )}
 
@@ -393,6 +533,7 @@ export default function Operations() {
               <th>ربح الفني</th>
               <th>ربح المحل</th>
               <th style={{ textAlign: 'center' }}>الدفع</th>
+              <th style={{ textAlign: 'center' }}>حالة الجهاز</th>
               <th style={{ textAlign: 'center' }}>إجراءات</th>
             </tr>
           </thead>
@@ -417,7 +558,23 @@ export default function Operations() {
                     )}
                   </div>
                 </td>
-                <td style={{ color: 'var(--text-muted)' }}>{op.device || '-'}</td>
+                <td style={{ color: 'var(--text-muted)' }}>
+                  <div>{op.device || '-'}</div>
+                  {(() => {
+                    let dispFaults: string[] = [];
+                    if (Array.isArray(op.faults)) dispFaults = op.faults;
+                    else if (typeof op.faults === 'string') dispFaults = [op.faults];
+                    else if (typeof (op as any).fault === 'string') dispFaults = [(op as any).fault];
+                    
+                    return dispFaults.length > 0 ? (
+                      <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', marginTop: '4px' }}>
+                        {dispFaults.map((f, i) => (
+                          <span key={i} style={{ fontSize: '0.75rem', background: 'var(--bg-color)', padding: '2px 6px', borderRadius: '4px', border: '1px solid var(--border-color)' }}>{f}</span>
+                        ))}
+                      </div>
+                    ) : null;
+                  })()}
+                </td>
                 <td style={{ fontWeight: 600 }}>{op.price ? op.price.toFixed(2) : '0.00'}</td>
                 <td style={{ color: 'var(--text-muted)' }}>{op.cost ? op.cost.toFixed(2) : '0.00'}</td>
                 <td style={{ color: 'var(--primary)' }}>{op.tech_profit.toFixed(2)}</td>
@@ -429,21 +586,77 @@ export default function Operations() {
                     <span className="badge badge-cash">نقدي</span>
                   )}
                 </td>
+                <td style={{ textAlign: 'center' }}>
+                  {op.status === 'under_maintenance' ? (
+                    <span className="badge" style={{ background: 'var(--warning-bg)', color: 'var(--warning)', borderColor: 'var(--warning)' }}>تحت الصيانة</span>
+                  ) : op.status === 'completed' ? (
+                    <span className="badge" style={{ background: 'rgba(59, 130, 246, 0.1)', color: '#3b82f6', borderColor: '#3b82f6' }}>مكتمل</span>
+                  ) : (
+                    <span className="badge" style={{ background: 'var(--success-bg)', color: 'var(--success)', borderColor: 'var(--success)' }}>تم تسليمه</span>
+                  )}
+                </td>
                 <td>
                   <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'center' }}>
+                    {op.status === 'under_maintenance' && (
+                      <button 
+                        className="btn btn-icon" 
+                        style={{ color: '#3b82f6', background: 'rgba(59, 130, 246, 0.1)' }}
+                        onClick={async () => {
+                          await (window as any).api.editOperation(op.id, { ...op, status: 'completed' });
+                          loadData();
+                          
+                          if (op.customer_phone) {
+                            setConfirmAction({
+                              message: 'تم تحديث الحالة إلى مكتمل. هل تود إرسال رسالة واتساب للزبون لإبلاغه بجاهزية الجهاز؟',
+                              onConfirm: () => {
+                                sendWhatsApp(op);
+                              }
+                            });
+                          } else {
+                            setToastMessage('تم تحديث الحالة إلى مكتمل');
+                            setTimeout(() => setToastMessage(null), 3000);
+                          }
+                        }} 
+                        title="تأشير كمكتمل"
+                      >
+                        <CheckCircle2 size={18} />
+                      </button>
+                    )}
+                    {op.status === 'completed' && (
+                      <button 
+                        className="btn btn-icon" 
+                        style={{ color: 'var(--success)', background: 'var(--success-bg)' }}
+                        onClick={async () => {
+                          await (window as any).api.editOperation(op.id, { ...op, status: 'delivered' });
+                          loadData();
+                          setToastMessage('تم تسليم الجهاز واحتساب الأرباح بنجاح');
+                          setTimeout(() => setToastMessage(null), 3000);
+                        }} 
+                        title="تأشير كتم التسليم"
+                      >
+                        <CheckCircle2 size={18} />
+                      </button>
+                    )}
                     <button className="btn btn-icon" onClick={() => handleEditClick(op)} title="تعديل">
                       <Edit size={18} />
                     </button>
                     <button
                       className="btn btn-icon danger"
-                      onClick={async () => {
-                        if (confirm('هل أنت متأكد من حذف هذه العملية؟')) {
-                          const res = await (window as any).api.deleteOperation(op.id);
-                          if (!res) {
-                            alert('لا يمكن حذف عملية من شهر تم تقفيله مسبقاً لحماية السجلات.');
+                      onClick={() => {
+                        setConfirmAction({
+                          message: 'هل أنت متأكد من حذف هذه العملية؟',
+                          onConfirm: async () => {
+                            const res = await (window as any).api.deleteOperation(op.id);
+                            if (!res) {
+                              setToastMessage('لا يمكن حذف عملية من شهر تم تقفيله مسبقاً لحماية السجلات.');
+                              setTimeout(() => setToastMessage(null), 4000);
+                            } else {
+                              loadData();
+                              setToastMessage('تم حذف العملية بنجاح');
+                              setTimeout(() => setToastMessage(null), 3000);
+                            }
                           }
-                          loadData();
-                        }
+                        });
                       }}
                       title="حذف"
                     >
@@ -489,6 +702,43 @@ export default function Operations() {
           >
             التالي <ChevronLeft size={20} />
           </button>
+        </div>
+      )}
+      {/* Toast Notification */}
+      {toastMessage && (
+        <div style={{ position: 'fixed', bottom: '2rem', left: '50%', transform: 'translateX(-50%)', background: 'var(--success)', color: '#fff', padding: '1rem 2rem', borderRadius: '8px', zIndex: 1000, boxShadow: '0 4px 12px rgba(0,0,0,0.15)', fontWeight: 'bold' }}>
+          {toastMessage}
+        </div>
+      )}
+
+      {/* Confirm Action Modal */}
+      {confirmAction && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+          <div className="stat-card fade-in" style={{ width: '90%', maxWidth: '400px', background: 'var(--bg-color)', border: '1px solid var(--border-color)', textAlign: 'center', padding: '2rem' }}>
+            <h3 style={{ marginBottom: '1rem', color: 'var(--primary)' }}>تأكيد الإجراء</h3>
+            <p style={{ marginBottom: '2rem', color: 'var(--text-main)', lineHeight: '1.6' }}>
+              {confirmAction.message}
+            </p>
+            <div style={{ display: 'flex', gap: '1rem' }}>
+              <button 
+                className="btn" 
+                onClick={() => setConfirmAction(null)}
+                style={{ flex: 1 }}
+              >
+                إلغاء
+              </button>
+              <button 
+                className="btn btn-primary" 
+                onClick={() => {
+                  confirmAction.onConfirm();
+                  setConfirmAction(null);
+                }}
+                style={{ flex: 1 }}
+              >
+                تأكيد
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

@@ -63,6 +63,17 @@ class SimpleDB {
         this.data.operations.forEach((op: any) => {
           if (!op.payment_status) op.payment_status = 'cash';
           if (!op.month_id) op.month_id = currentMonthId;
+          
+          // Migrate old combined device strings into device and faults array
+          if (op.faults === undefined && typeof op.device === 'string' && op.device.includes(' - ')) {
+            const parts = op.device.split(' - ');
+            op.device = parts[0].trim();
+            op.faults = [parts.slice(1).join(' - ').trim()];
+          } else if (op.faults === undefined) {
+            op.faults = [];
+          }
+          
+          if (!op.status) op.status = 'delivered';
         });
       }
       if (this.data.withdrawals) {

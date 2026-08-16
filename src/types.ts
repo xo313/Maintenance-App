@@ -29,6 +29,7 @@ export interface Operation {
   customer_name: string;
   customer_phone?: string;
   device: string;
+  faults?: string[];
   cost: number;
   price: number;
   technician_id: number;
@@ -36,6 +37,7 @@ export interface Operation {
   shop_profit: number;
   tech_profit: number;
   payment_status: 'cash' | 'debt';
+  status: 'under_maintenance' | 'completed' | 'delivered';
   month_id: number;
   paid_in_month_id?: number;
 }
@@ -52,17 +54,18 @@ export interface Withdrawal {
 }
 
 export interface DashboardStats {
+  cashBox: number;
+  totalProfit: number;
+  debtTotal: number;
+  totalWithdrawals: number;
+  
+  // For compatibility with settlement modal:
   baseCapital: number;
-  availableCapital: number; // baseCapital - tiedCapital
-  tiedCapital: number; // cost of unpaid debts
-  
-  totalShopProfit: number; // realized + unrealized
-  realizedShopProfit: number; // profit from cash operations + paid debts
-  unrealizedShopProfit: number; // profit from unpaid debts
-  
+  availableCapital: number;
+  tiedCapital: number;
+  realizedShopProfit: number;
   totalShopWithdrawal: number;
-  actualShopBalance: number; // Physical cash in the drawer
-  debtTotal: number; // Unpaid debts (price)
+  shopDue: number;
 }
 
 export interface TechnicianStats {

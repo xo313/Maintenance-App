@@ -35,25 +35,25 @@
 }
 
 html.light {
-  --bg-base: #f8fafc;        /* Slate 50 */
-  --bg-surface: #ffffff;     /* White */
-  --bg-elevated: #f1f5f9;    /* Slate 100 */
+  --bg-base: #f1f5f9;        /* Slate 100 - Softer base instead of very light */
+  --bg-surface: #f8fafc;     /* Slate 50 - Replaces harsh pure white */
+  --bg-elevated: #e2e8f0;    /* Slate 200 - For elevated elements */
   
-  --primary: #2563eb;        /* Blue 600 */
+  --primary: #2563eb;        /* Vibrant Blue 600 */
   --primary-hover: #1d4ed8;  /* Blue 700 */
-  --primary-light: rgba(37, 99, 235, 0.1);
+  --primary-light: rgba(37, 99, 235, 0.12);
   
-  --success: #059669;        /* Emerald 600 */
-  --success-bg: rgba(5, 150, 105, 0.1);
+  --success: #059669;        /* Vibrant Emerald 600 */
+  --success-bg: rgba(5, 150, 105, 0.12);
   
-  --danger: #dc2626;         /* Red 600 */
-  --danger-bg: rgba(220, 38, 38, 0.1);
+  --danger: #dc2626;         /* Vibrant Red 600 */
+  --danger-bg: rgba(220, 38, 38, 0.12);
   
-  --text-main: #0f172a;      /* Slate 900 */
-  --text-muted: #64748b;     /* Slate 500 */
+  --text-main: #0f172a;      /* Deep dark slate (Slate 900) for high contrast */
+  --text-muted: #475569;     /* Slate 600 - Darker muted text for better readability */
   
-  --border-color: #e2e8f0;   /* Slate 200 */
-  --border-light: rgba(0, 0, 0, 0.05);
+  --border-color: #cbd5e1;   /* Slate 300 - Slightly stronger borders */
+  --border-light: rgba(15, 23, 42, 0.06);
 }
 
 * {

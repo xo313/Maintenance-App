@@ -70,30 +70,30 @@ function autoBackupDaily() {
     const todayStr = new Date().toLocaleDateString('en-GB').replace(/\//g, '-');
     const userDataPath = app.getPath('userData');
     const backupDir = path.join(userDataPath, 'backups');
-    
+
     if (!fs.existsSync(backupDir)) {
       fs.mkdirSync(backupDir, { recursive: true });
     }
-    
+
     const backupFilePath = path.join(backupDir, `Backup_${monthNameSafe}.xlsx`);
-    
+
     // Generate data
-    const ops = db.data.operations.filter((op:any) => op.month_id === currentMonth.id || op.paid_in_month_id === currentMonth.id);
-    const debts = db.data.operations.filter((op:any) => op.payment_status === 'debt');
-    const tiedCapital = debts.reduce((sum:number, op:any) => sum + (op.cost||0), 0);
+    const ops = db.data.operations.filter((op: any) => op.month_id === currentMonth.id || op.paid_in_month_id === currentMonth.id);
+    const debts = db.data.operations.filter((op: any) => op.payment_status === 'debt');
+    const tiedCapital = debts.reduce((sum: number, op: any) => sum + (op.cost || 0), 0);
     const availableCapital = currentMonth.start_capital - tiedCapital;
-    
+
     const cashOps = ops.filter((op: any) => op.payment_status === 'cash' && !op.paid_in_month_id);
     const paidDebts = db.data.operations.filter((op: any) => op.paid_in_month_id === currentMonth.id);
     const realizedShopProfit = cashOps.reduce((sum: number, op: any) => sum + (op.shop_profit || 0), 0) +
-                               paidDebts.reduce((sum: number, op: any) => sum + (op.shop_profit || 0), 0);
-    
+      paidDebts.reduce((sum: number, op: any) => sum + (op.shop_profit || 0), 0);
+
     const shopWithdrawals = db.data.withdrawals
-        .filter((w:any) => w.type === 'shop_withdrawal' && w.month_id === currentMonth.id)
-        .reduce((sum:number, w:any) => sum + (w.amount||0), 0);
-    
-    const totalTechProfit = ops.reduce((sum:number, op:any) => sum + (op.tech_profit||0), 0);
-    const debtTotal = debts.reduce((sum:number, op:any) => sum + (op.price||0), 0);
+      .filter((w: any) => w.type === 'shop_withdrawal' && w.month_id === currentMonth.id)
+      .reduce((sum: number, w: any) => sum + (w.amount || 0), 0);
+
+    const totalTechProfit = ops.reduce((sum: number, op: any) => sum + (op.tech_profit || 0), 0);
+    const debtTotal = debts.reduce((sum: number, op: any) => sum + (op.price || 0), 0);
 
     const summaryData = [
       ["تقرير يوم", todayStr],
@@ -105,10 +105,11 @@ function autoBackupDaily() {
       ["إجمالي الديون المتبقية (السوق)", debtTotal]
     ];
 
-    const opsLogData = ops.map((op:any) => ({
+    const opsLogData = ops.map((op: any) => ({
       "التاريخ": op.date,
       "رقم العملية": op.id,
       "اسم العميل": op.customer_name || '-',
+      "الجهاز/الأعطال": (op.device || '') + (op.faults && op.faults.length > 0 ? ` (${op.faults.join(', ')})` : ''),
       "حالة الدفع": op.payment_status === 'debt' ? 'دين' : 'نقدي',
       "التكلفة": op.cost || 0,
       "المبلغ الإجمالي": op.price || 0,
@@ -135,7 +136,7 @@ function autoBackupDaily() {
     const buf = xlsx.write(wb, { type: 'buffer', bookType: 'xlsx' });
     fs.writeFileSync(backupFilePath, buf);
     console.log("Daily backup created:", backupFilePath);
-  } catch(e) {
+  } catch (e) {
     console.error("Failed daily backup", e);
   }
 }
@@ -146,27 +147,32 @@ function setupIPC() {
   ipcMain.handle('get-settings', () => {
     return db.data.settings;
   });
-  
+
   ipcMain.handle('update-settings', (_, settings) => {
     db.data.settings = { ...db.data.settings, ...settings };
     db.save();
     return true;
   });
 
+  ipcMain.handle('restart-app', () => {
+    app.relaunch();
+    app.exit(0);
+  });
+
   // Technicians
   ipcMain.handle('get-technicians', () => {
     return db.data.technicians.filter((t: any) => t.is_active !== false);
   });
-  
+
   ipcMain.handle('add-technician', (_, name, profit_percentage) => {
-    const newId = db.data.technicians.length > 0 ? Math.max(...db.data.technicians.map((t:any) => t.id)) + 1 : 1;
+    const newId = db.data.technicians.length > 0 ? Math.max(...db.data.technicians.map((t: any) => t.id)) + 1 : 1;
     db.data.technicians.push({ id: newId, name, profit_percentage: Math.max(0, profit_percentage), is_active: true });
     db.save();
     return true;
   });
 
   ipcMain.handle('edit-technician', (_, id, name, profit_percentage) => {
-    const tech = db.data.technicians.find((t:any) => t.id === id);
+    const tech = db.data.technicians.find((t: any) => t.id === id);
     if (tech) {
       tech.name = name;
       tech.profit_percentage = Math.max(0, profit_percentage);
@@ -177,7 +183,7 @@ function setupIPC() {
   });
 
   ipcMain.handle('delete-technician', (_, id) => {
-    const tech = db.data.technicians.find((t:any) => t.id === id);
+    const tech = db.data.technicians.find((t: any) => t.id === id);
     if (tech) {
       tech.is_active = false;
       db.save();
@@ -190,26 +196,26 @@ function setupIPC() {
   ipcMain.handle('get-operations', () => {
     return db.data.operations
       .filter((op: any) => op.month_id === getCurrentMonth().id)
-      .map((op:any) => {
-        const tech = db.data.technicians.find((t:any) => t.id === op.technician_id);
+      .map((op: any) => {
+        const tech = db.data.technicians.find((t: any) => t.id === op.technician_id);
         return { ...op, technician_name: tech ? tech.name : 'Unknown' };
-      }).reverse(); 
+      }).reverse();
   });
 
   ipcMain.handle('get-all-operations', () => {
-    return db.data.operations.map((op:any) => {
-      const tech = db.data.technicians.find((t:any) => t.id === op.technician_id);
+    return db.data.operations.map((op: any) => {
+      const tech = db.data.technicians.find((t: any) => t.id === op.technician_id);
       return { ...op, technician_name: tech ? tech.name : 'Unknown' };
     }).reverse();
   });
 
   ipcMain.handle('add-operation', (_, op) => {
-    const newId = db.data.operations.length > 0 ? Math.max(...db.data.operations.map((o:any) => o.id)) + 1 : 1;
-    
+    const newId = db.data.operations.length > 0 ? Math.max(...db.data.operations.map((o: any) => o.id)) + 1 : 1;
+
     // Sanitize
     op.price = Math.max(0, op.price || 0);
     op.cost = Math.max(0, op.cost || 0);
-    
+
     db.data.operations.push({
       id: newId,
       date: new Date().toLocaleDateString('en-GB'),
@@ -221,7 +227,7 @@ function setupIPC() {
   });
 
   ipcMain.handle('edit-operation', (_, opId, updatedOp) => {
-    const idx = db.data.operations.findIndex((o:any) => o.id === opId);
+    const idx = db.data.operations.findIndex((o: any) => o.id === opId);
     if (idx !== -1) {
       // Prevent retroactive edits
       if (db.data.operations[idx].month_id !== getCurrentMonth().id) {
@@ -229,7 +235,7 @@ function setupIPC() {
       }
       updatedOp.price = Math.max(0, updatedOp.price || 0);
       updatedOp.cost = Math.max(0, updatedOp.cost || 0);
-      
+
       db.data.operations[idx] = { ...db.data.operations[idx], ...updatedOp };
       db.save();
       return true;
@@ -238,7 +244,7 @@ function setupIPC() {
   });
 
   ipcMain.handle('delete-operation', (_, opId) => {
-    const idx = db.data.operations.findIndex((o:any) => o.id === opId);
+    const idx = db.data.operations.findIndex((o: any) => o.id === opId);
     if (idx !== -1) {
       // Prevent retroactive deletion
       if (db.data.operations[idx].month_id !== getCurrentMonth().id) {
@@ -255,8 +261,8 @@ function setupIPC() {
   ipcMain.handle('get-debts', () => {
     return db.data.operations
       .filter((op: any) => op.payment_status === 'debt')
-      .map((op:any) => {
-        const tech = db.data.technicians.find((t:any) => t.id === op.technician_id);
+      .map((op: any) => {
+        const tech = db.data.technicians.find((t: any) => t.id === op.technician_id);
         return { ...op, technician_name: tech ? tech.name : 'Unknown' };
       }).reverse();
   });
@@ -274,18 +280,18 @@ function setupIPC() {
 
   // Withdrawals
   ipcMain.handle('get-withdrawals', () => {
-    return db.data.withdrawals.map((w:any) => {
-      const tech = db.data.technicians.find((t:any) => t.id === w.technician_id);
+    return db.data.withdrawals.map((w: any) => {
+      const tech = db.data.technicians.find((t: any) => t.id === w.technician_id);
       return { ...w, technician_name: tech ? tech.name : null };
     }).reverse();
   });
 
   ipcMain.handle('add-withdrawal', (_, w) => {
-    const newId = db.data.withdrawals.length > 0 ? Math.max(...db.data.withdrawals.map((o:any) => o.id)) + 1 : 1;
-    
+    const newId = db.data.withdrawals.length > 0 ? Math.max(...db.data.withdrawals.map((o: any) => o.id)) + 1 : 1;
+
     // Sanitize
     w.amount = Math.max(0, w.amount || 0);
-    
+
     db.data.withdrawals.push({
       id: newId,
       date: new Date().toLocaleDateString('en-GB'),
@@ -297,7 +303,7 @@ function setupIPC() {
   });
 
   ipcMain.handle('edit-withdrawal', (_, id, updatedW) => {
-    const idx = db.data.withdrawals.findIndex((w:any) => w.id === id);
+    const idx = db.data.withdrawals.findIndex((w: any) => w.id === id);
     if (idx !== -1) {
       if (db.data.withdrawals[idx].month_id !== getCurrentMonth().id) {
         return false;
@@ -311,7 +317,7 @@ function setupIPC() {
   });
 
   ipcMain.handle('delete-withdrawal', (_, id) => {
-    const idx = db.data.withdrawals.findIndex((w:any) => w.id === id);
+    const idx = db.data.withdrawals.findIndex((w: any) => w.id === id);
     if (idx !== -1) {
       if (db.data.withdrawals[idx].month_id !== getCurrentMonth().id) {
         return false;
@@ -326,74 +332,73 @@ function setupIPC() {
   // Dashboard Stats
   ipcMain.handle('get-dashboard-stats', () => {
     const currentMonth = getCurrentMonth();
-    
+
     // Profit of the current month
     const currentMonthOps = db.data.operations.filter((op: any) => op.month_id === currentMonth.id);
-    const totalShopProfit = currentMonthOps.reduce((sum: number, op: any) => sum + (op.shop_profit || 0), 0);
-    
-    // Realized vs Unrealized
-    const cashOps = currentMonthOps.filter((op: any) => op.payment_status === 'cash' && !op.paid_in_month_id);
-    const paidDebts = db.data.operations.filter((op: any) => op.paid_in_month_id === currentMonth.id);
-    const unpaidDebts = db.data.operations.filter((op: any) => op.payment_status === 'debt');
-    
-    const realizedShopProfit = cashOps.reduce((sum: number, op: any) => sum + (op.shop_profit || 0), 0) +
-                               paidDebts.reduce((sum: number, op: any) => sum + (op.shop_profit || 0), 0);
+    const deliveredOps = currentMonthOps.filter((op: any) => op.status === 'delivered');
 
-    // Capital Revolving Logic
-    const tiedCapital = unpaidDebts.reduce((sum: number, op: any) => sum + (op.cost || 0), 0);
-    const availableCapital = currentMonth.start_capital - tiedCapital;
-    
-    // Withdrawals
+    // Total profit ONLY for delivered operations
+    const totalProfit = deliveredOps.reduce((sum: number, op: any) => sum + ((op.price || 0) - (op.cost || 0)), 0);
+
+    // Realized vs Unrealized
+    const cashOps = deliveredOps.filter((op: any) => op.payment_status === 'cash' && !op.paid_in_month_id);
+    const paidDebts = db.data.operations.filter((op: any) => op.paid_in_month_id === currentMonth.id && op.status === 'delivered');
+    const unpaidDebts = deliveredOps.filter((op: any) => op.payment_status === 'debt');
+
+    const totalCashReceived = cashOps.reduce((sum: number, op: any) => sum + (op.price || 0), 0) +
+      paidDebts.reduce((sum: number, op: any) => sum + (op.price || 0), 0);
+
+    // Cost of ALL operations created this month is deducted from the drawer (as parts are bought with cash)
+    const totalOpsCost = currentMonthOps.reduce((sum: number, op: any) => sum + (op.cost || 0), 0);
+
+    // Withdrawals (ALL withdrawals in the current month)
     const currentMonthWithdrawals = db.data.withdrawals.filter((w: any) => w.month_id === currentMonth.id);
-    const totalShopWithdrawal = currentMonthWithdrawals
-      .filter((w:any) => w.type === 'shop_withdrawal')
-      .reduce((sum: number, w: any) => sum + (w.amount || 0), 0);
+    const totalWithdrawals = currentMonthWithdrawals.reduce((sum: number, w: any) => sum + (w.amount || 0), 0);
 
     // EXACT EQUATIONS FROM USER:
-    // 1. cashBox = start_capital + realizedShopProfit - totalShopWithdrawal
-    const cashBox = currentMonth.start_capital + realizedShopProfit - totalShopWithdrawal;
-    // 2. shopDue = availableCapital + totalShopProfit
-    const shopDue = availableCapital + totalShopProfit;
-    // 3. totalProfit = totalShopProfit
-    // 4. debtTotal = unpaidDebts.reduce(sum of prices)
+    // 1. cashBox = start_capital + totalCashReceived - totalOpsCost - totalWithdrawals
+    const cashBox = currentMonth.start_capital + totalCashReceived - totalOpsCost - totalWithdrawals;
+
+    // 3. debtTotal = unpaidDebts.reduce(sum of prices)
     const debtTotal = unpaidDebts.reduce((sum: number, op: any) => sum + (op.price || 0), 0);
 
     return {
       cashBox,
-      shopDue,
-      totalProfit: totalShopProfit,
+      totalProfit,
       debtTotal,
+      totalWithdrawals,
       // For compatibility if modal still uses them:
       baseCapital: currentMonth.start_capital,
-      tiedCapital,
-      availableCapital,
-      realizedShopProfit,
-      totalShopWithdrawal
+      tiedCapital: unpaidDebts.reduce((sum: number, op: any) => sum + (op.cost || 0), 0),
+      availableCapital: currentMonth.start_capital - unpaidDebts.reduce((sum: number, op: any) => sum + (op.cost || 0), 0),
+      realizedShopProfit: cashOps.reduce((sum: number, op: any) => sum + (op.shop_profit || 0), 0) + paidDebts.reduce((sum: number, op: any) => sum + (op.shop_profit || 0), 0),
+      totalShopWithdrawal: currentMonthWithdrawals.filter((w: any) => w.type === 'shop_withdrawal').reduce((sum: number, w: any) => sum + (w.amount || 0), 0),
+      shopDue: (currentMonth.start_capital - unpaidDebts.reduce((sum: number, op: any) => sum + (op.cost || 0), 0)) + deliveredOps.reduce((sum: number, op: any) => sum + (op.shop_profit || 0), 0)
     };
   });
 
   // Technician Stats
   ipcMain.handle('get-technician-stats', () => {
     const currentMonth = getCurrentMonth();
-    
+
     return db.data.technicians
       .map((tech: any) => {
-        const techOpsThisMonth = db.data.operations.filter((op:any) => op.technician_id === tech.id && op.month_id === currentMonth.id);
+        const techOpsThisMonth = db.data.operations.filter((op: any) => op.technician_id === tech.id && op.month_id === currentMonth.id);
         const totalCost = techOpsThisMonth.reduce((sum: number, op: any) => sum + (op.cost || 0), 0);
 
-        const cashOps = techOpsThisMonth.filter((op:any) => op.payment_status === 'cash' && !op.paid_in_month_id);
-        const paidDebts = db.data.operations.filter((op:any) => op.technician_id === tech.id && op.paid_in_month_id === currentMonth.id);
-        
+        const cashOps = techOpsThisMonth.filter((op: any) => op.payment_status === 'cash' && !op.paid_in_month_id);
+        const paidDebts = db.data.operations.filter((op: any) => op.technician_id === tech.id && op.paid_in_month_id === currentMonth.id);
+
         const realizedProfit = cashOps.reduce((sum: number, op: any) => sum + (op.tech_profit || 0), 0) +
-                               paidDebts.reduce((sum: number, op: any) => sum + (op.tech_profit || 0), 0);
-        
-        const unpaidDebts = db.data.operations.filter((op:any) => op.technician_id === tech.id && op.payment_status === 'debt');
+          paidDebts.reduce((sum: number, op: any) => sum + (op.tech_profit || 0), 0);
+
+        const unpaidDebts = db.data.operations.filter((op: any) => op.technician_id === tech.id && op.payment_status === 'debt');
         const unrealizedProfit = unpaidDebts.reduce((sum: number, op: any) => sum + (op.tech_profit || 0), 0);
 
         const techWithdrawal = db.data.withdrawals
-          .filter((w:any) => w.type === 'tech_withdrawal' && w.technician_id === tech.id && w.month_id === currentMonth.id)
+          .filter((w: any) => w.type === 'tech_withdrawal' && w.technician_id === tech.id && w.month_id === currentMonth.id)
           .reduce((sum: number, w: any) => sum + (w.amount || 0), 0);
-        
+
         return {
           id: tech.id,
           name: tech.name,
@@ -412,7 +417,7 @@ function setupIPC() {
   ipcMain.handle('get-ic-compatibilities', () => {
     return db.data.ic_compatibilities || [];
   });
-  
+
   ipcMain.handle('add-ic-compatibility', (_, ic) => {
     const newIc = { ...ic, id: Date.now() };
     if (!db.data.ic_compatibilities) db.data.ic_compatibilities = [];
@@ -422,7 +427,7 @@ function setupIPC() {
   });
 
   ipcMain.handle('edit-ic-compatibility', (_, id, ic) => {
-    const idx = db.data.ic_compatibilities.findIndex((i:any) => i.id === id);
+    const idx = db.data.ic_compatibilities.findIndex((i: any) => i.id === id);
     if (idx !== -1) {
       db.data.ic_compatibilities[idx] = { ...db.data.ic_compatibilities[idx], ...ic };
       db.save();
@@ -432,7 +437,7 @@ function setupIPC() {
   });
 
   ipcMain.handle('delete-ic-compatibility', (_, id) => {
-    db.data.ic_compatibilities = db.data.ic_compatibilities.filter((i:any) => i.id !== id);
+    db.data.ic_compatibilities = db.data.ic_compatibilities.filter((i: any) => i.id !== id);
     db.save();
     return true;
   });
@@ -452,13 +457,13 @@ function setupIPC() {
         const opId = row[1] ? Number(row[1]) : null;
         const customerName = String(row[2] || '').trim();
         const device = String(row[3] || '').trim();
-        
+
         const techName = String(row[10] || '').trim();
         let tech = db.data.technicians.find((t: any) => t.name === techName);
         let techId = tech ? tech.id : (db.data.technicians[0]?.id || 1);
-        
-        const isDuplicate = db.data.operations.some((op: any) => 
-          (opId && op.id === opId) || 
+
+        const isDuplicate = db.data.operations.some((op: any) =>
+          (opId && op.id === opId) ||
           (op.customer_name === customerName && op.device === device && op.date === date)
         );
 
@@ -521,13 +526,13 @@ function setupIPC() {
         const opId = row[1] ? Number(row[1]) : null;
         const customerName = String(row[2] || '').trim();
         const device = String(row[3] || '').trim();
-        
+
         const techName = String(row[10] || '').trim();
         let tech = db.data.technicians.find((t: any) => t.name === techName);
         let techId = tech ? tech.id : (db.data.technicians[0]?.id || 1);
-        
-        const isDuplicate = db.data.operations.some((op: any) => 
-          (opId && op.id === opId) || 
+
+        const isDuplicate = db.data.operations.some((op: any) =>
+          (opId && op.id === opId) ||
           (op.customer_name === customerName && op.device === device && op.date === date)
         );
 
@@ -575,25 +580,25 @@ function setupIPC() {
       for (let i = 1; i < data.length; i++) {
         const row = data[i] as any[];
         if (!row || row.length < 2) continue;
-        
+
         const category = row[0] ? String(row[0]).trim() : 'General';
         const icCode = String(row[1]).trim();
         const devicesStr = row[2] ? String(row[2]).trim() : '';
-        
+
         if (!icCode) continue;
 
         const existingIdx = db.data.ic_compatibilities.findIndex((ic: any) => String(ic.ic_number || '').toLowerCase() === icCode.toLowerCase());
-        
+
         if (existingIdx !== -1) {
-          const existingDevices = String(db.data.ic_compatibilities[existingIdx].compatible_devices || '').split(/[,=]/).map((d:string) => d.trim()).filter(Boolean);
-          const newDevices = String(devicesStr || '').split(/[,=]/).map((d:string) => d.trim()).filter(Boolean);
-          
+          const existingDevices = String(db.data.ic_compatibilities[existingIdx].compatible_devices || '').split(/[,=]/).map((d: string) => d.trim()).filter(Boolean);
+          const newDevices = String(devicesStr || '').split(/[,=]/).map((d: string) => d.trim()).filter(Boolean);
+
           const deviceMap = new Map<string, string>();
           [...existingDevices, ...newDevices].forEach(d => {
             deviceMap.set(d.toLowerCase(), d);
           });
           const uniqueDevices = Array.from(deviceMap.values());
-          
+
           if (uniqueDevices.length > existingDevices.length) {
             // New devices were found
             db.data.ic_compatibilities[existingIdx].compatible_devices = uniqueDevices.join(' = ');
@@ -650,25 +655,25 @@ function setupIPC() {
       for (let i = 1; i < data.length; i++) {
         const row = data[i] as any[];
         if (!row || row.length < 2) continue;
-        
+
         const category = row[0] ? String(row[0]).trim() : 'General';
         const icCode = String(row[1]).trim();
         const devicesStr = row[2] ? String(row[2]).trim() : '';
-        
+
         if (!icCode) continue;
 
         const existingIdx = db.data.ic_compatibilities.findIndex((ic: any) => String(ic.ic_number || '').toLowerCase() === icCode.toLowerCase());
-        
+
         if (existingIdx !== -1) {
-          const existingDevices = String(db.data.ic_compatibilities[existingIdx].compatible_devices || '').split(/[,=]/).map((d:string) => d.trim()).filter(Boolean);
-          const newDevices = String(devicesStr || '').split(/[,=]/).map((d:string) => d.trim()).filter(Boolean);
-          
+          const existingDevices = String(db.data.ic_compatibilities[existingIdx].compatible_devices || '').split(/[,=]/).map((d: string) => d.trim()).filter(Boolean);
+          const newDevices = String(devicesStr || '').split(/[,=]/).map((d: string) => d.trim()).filter(Boolean);
+
           const deviceMap = new Map<string, string>();
           [...existingDevices, ...newDevices].forEach(d => {
             deviceMap.set(d.toLowerCase(), d);
           });
           const uniqueDevices = Array.from(deviceMap.values());
-          
+
           if (uniqueDevices.length > existingDevices.length) {
             // New devices were found
             db.data.ic_compatibilities[existingIdx].compatible_devices = uniqueDevices.join(' = ');
@@ -703,7 +708,7 @@ function setupIPC() {
     currentMonth.is_closed = true;
     currentMonth.closed_at = new Date().toISOString();
 
-    const newMonthId = Math.max(...db.data.months.map((m:any) => m.id)) + 1;
+    const newMonthId = Math.max(...db.data.months.map((m: any) => m.id)) + 1;
     db.data.months.push({
       id: newMonthId,
       month_name: new Date().toLocaleDateString('ar-EG', { month: 'long', year: 'numeric' }),
@@ -719,26 +724,26 @@ function setupIPC() {
 
   ipcMain.handle('close-month-with-excel', async (_, newCapital) => {
     const currentMonth = getCurrentMonth();
-    
-    const ops = db.data.operations.filter((op:any) => op.month_id === currentMonth.id || op.paid_in_month_id === currentMonth.id);
-    const debts = db.data.operations.filter((op:any) => op.payment_status === 'debt');
-    const tiedCapital = debts.reduce((sum:number, op:any) => sum + (op.cost||0), 0);
+
+    const ops = db.data.operations.filter((op: any) => op.month_id === currentMonth.id || op.paid_in_month_id === currentMonth.id);
+    const debts = db.data.operations.filter((op: any) => op.payment_status === 'debt');
+    const tiedCapital = debts.reduce((sum: number, op: any) => sum + (op.cost || 0), 0);
     const availableCapital = currentMonth.start_capital - tiedCapital;
-    
+
     const cashOps = ops.filter((op: any) => op.payment_status === 'cash' && !op.paid_in_month_id);
     const paidDebts = db.data.operations.filter((op: any) => op.paid_in_month_id === currentMonth.id);
     const realizedShopProfit = cashOps.reduce((sum: number, op: any) => sum + (op.shop_profit || 0), 0) +
-                               paidDebts.reduce((sum: number, op: any) => sum + (op.shop_profit || 0), 0);
-    
+      paidDebts.reduce((sum: number, op: any) => sum + (op.shop_profit || 0), 0);
+
     const shopWithdrawals = db.data.withdrawals
-        .filter((w:any) => w.type === 'shop_withdrawal' && w.month_id === currentMonth.id)
-        .reduce((sum:number, w:any) => sum + (w.amount||0), 0);
+      .filter((w: any) => w.type === 'shop_withdrawal' && w.month_id === currentMonth.id)
+      .reduce((sum: number, w: any) => sum + (w.amount || 0), 0);
     const totalTechWithdrawals = db.data.withdrawals
-        .filter((w:any) => w.type === 'tech_withdrawal' && w.month_id === currentMonth.id)
-        .reduce((sum:number, w:any) => sum + (w.amount||0), 0);
-    
-    const totalTechProfit = ops.reduce((sum:number, op:any) => sum + (op.tech_profit||0), 0);
-    const debtTotal = debts.reduce((sum:number, op:any) => sum + (op.price||0), 0);
+      .filter((w: any) => w.type === 'tech_withdrawal' && w.month_id === currentMonth.id)
+      .reduce((sum: number, w: any) => sum + (w.amount || 0), 0);
+
+    const totalTechProfit = ops.reduce((sum: number, op: any) => sum + (op.tech_profit || 0), 0);
+    const debtTotal = debts.reduce((sum: number, op: any) => sum + (op.price || 0), 0);
 
     const summaryData = [
       ["تقرير شهر", currentMonth.date],
@@ -755,11 +760,11 @@ function setupIPC() {
       ["إجمالي الديون المتبقية (السوق)", debtTotal]
     ];
 
-    const opsLogData = ops.map((op:any) => ({
+    const opsLogData = ops.map((op: any) => ({
       "التاريخ": op.date,
       "رقم العملية": op.id,
       "اسم العميل": op.customer_name || '-',
-      "نوع العطل/الجهاز": op.device || '-',
+      "الجهاز/الأعطال": (op.device || '') + (op.faults && op.faults.length > 0 ? ` (${op.faults.join(', ')})` : ''),
       "حالة الدفع": op.payment_status === 'debt' ? 'دين' : 'نقدي',
       "التكلفة": op.cost || 0,
       "المبلغ الإجمالي": op.price || 0,
@@ -797,7 +802,7 @@ function setupIPC() {
     try {
       const buf = xlsx.write(wb, { type: 'buffer', bookType: 'xlsx' });
       fs.writeFileSync(filePath, buf);
-    } catch(err: any) {
+    } catch (err: any) {
       return { success: false, reason: 'error', message: err.message };
     }
 
@@ -805,7 +810,7 @@ function setupIPC() {
     currentMonth.is_closed = true;
     currentMonth.closed_at = new Date().toISOString();
 
-    const newMonthId = Math.max(...db.data.months.map((m:any) => m.id)) + 1;
+    const newMonthId = Math.max(...db.data.months.map((m: any) => m.id)) + 1;
     db.data.months.push({
       id: newMonthId,
       month_name: new Date().toLocaleDateString('ar-EG', { month: 'long', year: 'numeric' }),
@@ -826,14 +831,14 @@ function setupIPC() {
 
   ipcMain.handle('add-scrap-device', (_, data) => {
     if (!db.data.scrap_devices) db.data.scrap_devices = [];
-    const newId = db.data.scrap_devices.length > 0 ? Math.max(...db.data.scrap_devices.map((d:any) => d.id)) + 1 : 1;
+    const newId = db.data.scrap_devices.length > 0 ? Math.max(...db.data.scrap_devices.map((d: any) => d.id)) + 1 : 1;
     db.data.scrap_devices.push({ id: newId, ...data });
     db.save();
     return true;
   });
 
   ipcMain.handle('edit-scrap-device', (_, id, data) => {
-    const idx = db.data.scrap_devices.findIndex((d:any) => d.id === id);
+    const idx = db.data.scrap_devices.findIndex((d: any) => d.id === id);
     if (idx !== -1) {
       db.data.scrap_devices[idx] = { ...db.data.scrap_devices[idx], ...data };
       db.save();
@@ -843,7 +848,7 @@ function setupIPC() {
   });
 
   ipcMain.handle('delete-scrap-device', (_, id) => {
-    const idx = db.data.scrap_devices.findIndex((d:any) => d.id === id);
+    const idx = db.data.scrap_devices.findIndex((d: any) => d.id === id);
     if (idx !== -1) {
       db.data.scrap_devices.splice(idx, 1);
       db.save();
@@ -884,7 +889,7 @@ function setupIPC() {
   ipcMain.handle('factory-reset', () => {
     db.data.operations = [];
     db.data.withdrawals = [];
-    
+
     if (db.data.technicians) {
       db.data.technicians.forEach((t: any) => {
         t.start_balance = 0;
@@ -899,7 +904,7 @@ function setupIPC() {
       created_at: new Date().toISOString(),
       closed_at: null
     }];
-    
+
     db.save();
     return true;
   });

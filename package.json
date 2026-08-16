@@ -37,7 +37,7 @@
     "appId": "com.maintenance.app",
     "productName": "Maintenance App",
     "directories": {
-      "output": "release"
+      "output": "release_final"
     },
     "win": {
       "target": "nsis"

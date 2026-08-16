@@ -26,6 +26,8 @@ export default function Settings() {
     setTheme(data.theme || 'dark');
   };
 
+  const [saveMessage, setSaveMessage] = useState('');
+
   const handleSaveSettings = async () => {
     await (window as any).api.updateSettings({
       shop_name: shopName,
@@ -40,7 +42,10 @@ export default function Settings() {
       document.documentElement.classList.remove('light');
     }
     
-    alert('تم حفظ الإعدادات بنجاح. قد تحتاج لإعادة تشغيل التطبيق لتطبيق بعض التغييرات (مثل اسم المركز في الشريط الجانبي).');
+    setSaveMessage('تم حفظ الإعدادات بنجاح. جاري إعادة تحميل التطبيق لتطبيق التغييرات...');
+    setTimeout(() => {
+      window.location.reload();
+    }, 1000);
   };
 
   const handleToggleTheme = () => {
@@ -173,7 +178,9 @@ export default function Settings() {
                     <strong>المتغيرات المتاحة للاستخدام:</strong><br />
                     - <code>[اسم_الزبون]</code> : يتم استبداله باسم صاحب الجهاز.<br />
                     - <code>[اسم_الجهاز]</code> : يتم استبداله باسم الجهاز المصلح.<br />
-                    - <code>[المبلغ]</code> : يتم استبداله بمبلغ التكلفة/السعر المطلوب.
+                    - <code>[المشكلة]</code> : يتم استبداله بالأعطال المسجلة للجهاز.<br />
+                    - <code>[المبلغ]</code> : يتم استبداله بالسعر النهائي المطلوب.<br />
+                    - <code>[اسم_المحل]</code> : يتم استبداله باسم المركز الخاص بك.
                   </div>
                 </div>
 
@@ -197,10 +204,17 @@ export default function Settings() {
                   </div>
                 </div>
 
-                <div style={{ display: 'flex', gap: '1rem' }}>
-                  <button className="btn btn-primary" onClick={handleSaveSettings}>
-                    <Save size={18} /> حفظ الإعدادات
-                  </button>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                  {saveMessage && (
+                    <div style={{ padding: '0.75rem', background: 'var(--success-bg)', color: 'var(--success)', borderRadius: '8px', border: '1px solid var(--success)', fontSize: '0.95rem' }}>
+                      {saveMessage}
+                    </div>
+                  )}
+                  <div style={{ display: 'flex', gap: '1rem' }}>
+                    <button className="btn btn-primary" onClick={handleSaveSettings}>
+                      <Save size={18} /> حفظ الإعدادات
+                    </button>
+                  </div>
                 </div>
               </div>
 

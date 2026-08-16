@@ -49,5 +49,6 @@ contextBridge.exposeInMainWorld('api', {
   
   // Backup & Reset
   getAllOperations: () => ipcRenderer.invoke('get-all-operations'),
-  factoryReset: () => ipcRenderer.invoke('factory-reset')
+  factoryReset: () => ipcRenderer.invoke('factory-reset'),
+  restartApp: () => ipcRenderer.invoke('restart-app')
 });

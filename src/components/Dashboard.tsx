@@ -68,59 +68,67 @@ export default function Dashboard() {
       </div>
 
       <div className="dashboard-grid">
-        {/* Card 1: Cash Box */}
-        <div className="stat-card">
+        {/* Card 1: Expected Cash (الكاش المتوقع في الصندوق) */}
+        <div className="stat-card" style={{ borderLeft: '4px solid #3b82f6', background: 'linear-gradient(to right, rgba(59, 130, 246, 0.05), transparent)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-            <div className="stat-title">المبلغ الحالي (الصندوق)</div>
-            <div style={{ padding: '10px', background: 'rgba(255,255,255,0.05)', borderRadius: '12px', color: '#f8fafc' }}>
-              <Wallet size={24} />
+            <div className="stat-title" style={{ fontSize: '1.1rem', fontWeight: 600, color: 'var(--text-main)' }}>الكاش المتوقع في الصندوق</div>
+            <div style={{ padding: '10px', background: '#3b82f620', borderRadius: '12px', color: '#3b82f6' }}>
+              <Wallet size={26} />
             </div>
           </div>
-          <div className="stat-value">{stats.cashBox.toFixed(2)}</div>
-          <div style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>
-            (رأس المال + أرباح العمليات النقدية - السحوبات)
+          <div className="stat-value" style={{ color: '#3b82f6', display: 'flex', alignItems: 'baseline', gap: '0.4rem', marginTop: '0.5rem' }}>
+            {stats.cashBox.toLocaleString()}
+          </div>
+          <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginTop: '0.5rem' }}>
+            رأس المال + إجمالي المبالغ المستلمة - إجمالي التكاليف والسحوبات
           </div>
         </div>
 
-        {/* Card 2: Final Due */}
-        <div className="stat-card" style={{ borderLeft: '4px solid var(--primary)' }}>
+        {/* Card 2: Total Profits (الأرباح الكلية) */}
+        <div className="stat-card" style={{ borderLeft: '4px solid #10b981', background: 'linear-gradient(to right, rgba(16, 185, 129, 0.05), transparent)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-            <div className="stat-title">المبلغ المستحق (مستحقات المحل)</div>
-            <div style={{ padding: '10px', background: 'var(--primary-light)', borderRadius: '12px', color: 'var(--primary)' }}>
-              <Banknote size={24} />
+            <div className="stat-title" style={{ fontSize: '1.1rem', fontWeight: 600, color: 'var(--text-main)' }}>الأرباح الكلية</div>
+            <div style={{ padding: '10px', background: '#10b98120', borderRadius: '12px', color: '#10b981' }}>
+              <TrendingUp size={26} />
             </div>
           </div>
-          <div className="stat-value" style={{ color: 'var(--primary)' }}>{stats.shopDue.toFixed(2)}</div>
-          <div style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>
-            (رأس المال المتوفر + أرباح المحل الصافية)
+          <div className="stat-value" style={{ color: '#10b981', display: 'flex', alignItems: 'baseline', gap: '0.4rem', marginTop: '0.5rem' }}>
+            {stats.totalProfit.toLocaleString()}
+          </div>
+          <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginTop: '0.5rem' }}>
+            صافي الأرباح الكلية لجميع العمليات (الفرق بين سعر البيع والتكلفة)
           </div>
         </div>
 
-        {/* Card 3: Total Profit */}
-        <div className="stat-card" style={{ borderLeft: '4px solid var(--success)' }}>
+        {/* Card 3: Total Debts (إجمالي الديون) */}
+        <div className="stat-card" style={{ borderLeft: '4px solid #f59e0b', background: 'linear-gradient(to right, rgba(245, 158, 11, 0.05), transparent)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-            <div className="stat-title">الأرباح الكلية</div>
-            <div style={{ padding: '10px', background: 'var(--success-bg)', borderRadius: '12px', color: 'var(--success)' }}>
-              <TrendingUp size={24} />
+            <div className="stat-title" style={{ fontSize: '1.1rem', fontWeight: 600, color: 'var(--text-main)' }}>إجمالي الديون</div>
+            <div style={{ padding: '10px', background: '#f59e0b20', borderRadius: '12px', color: '#f59e0b' }}>
+              <AlertTriangle size={26} />
             </div>
           </div>
-          <div className="stat-value" style={{ color: 'var(--success)' }}>{stats.totalProfit.toFixed(2)}</div>
-          <div style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>
-            (إجمالي أرباح جميع العمليات نقدية أو دين)
+          <div className="stat-value" style={{ color: '#f59e0b', display: 'flex', alignItems: 'baseline', gap: '0.4rem', marginTop: '0.5rem' }}>
+            {stats.debtTotal.toLocaleString()}
+          </div>
+          <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginTop: '0.5rem' }}>
+            مجموع المبالغ المتبقية في ذمة الزبائن للعمليات غير المسددة
           </div>
         </div>
 
-        {/* Card 4: Debts */}
-        <div className="stat-card" style={{ borderLeft: '4px solid var(--danger)' }}>
+        {/* Card 4: Total Withdrawals (إجمالي السحوبات) */}
+        <div className="stat-card" style={{ borderLeft: '4px solid #ef4444', background: 'linear-gradient(to right, rgba(239, 68, 68, 0.05), transparent)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-            <div className="stat-title">ديون السوق المتبقية</div>
-            <div style={{ padding: '10px', background: 'var(--danger-bg)', borderRadius: '12px', color: 'var(--danger)' }}>
-              <AlertTriangle size={24} />
+            <div className="stat-title" style={{ fontSize: '1.1rem', fontWeight: 600, color: 'var(--text-main)' }}>إجمالي السحوبات</div>
+            <div style={{ padding: '10px', background: '#ef444420', borderRadius: '12px', color: '#ef4444' }}>
+              <Banknote size={26} />
             </div>
           </div>
-          <div className="stat-value" style={{ color: 'var(--danger)' }}>{stats.debtTotal.toFixed(2)}</div>
-          <div style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>
-            إجمالي المبالغ غير المسددة للعمليات (دين)
+          <div className="stat-value" style={{ color: '#ef4444', display: 'flex', alignItems: 'baseline', gap: '0.4rem', marginTop: '0.5rem' }}>
+            {stats.totalWithdrawals.toLocaleString()}
+          </div>
+          <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginTop: '0.5rem' }}>
+            إجمالي السحوبات والمصروفات النقدية (الإدارة، النثريات، الفنيين)
           </div>
         </div>
       </div>
