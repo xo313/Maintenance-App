@@ -421,7 +421,7 @@ export default function Operations() {
 
           <div style={{ gridColumn: '1 / -1', marginTop: 'var(--space-2)' }}>
             {technicians.length === 0 ? (
-              <div style={{ padding: 'var(--space-4)', background: 'var(--danger-bg)', color: 'var(--danger)', borderRadius: 'var(--radius-sm)', textAlign: 'center', marginBottom: 'var(--space-4)' }}>
+              <div className="alert alert-danger">
                 ⚠️ لا يمكنك تسجيل عملية صيانة قبل إضافة "فني" واحد على الأقل من صفحة الإعدادات.
               </div>
             ) : null}
@@ -433,8 +433,8 @@ export default function Operations() {
       </div>
 
       {editingOp && (
-        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '1rem' }}>
-          <div className="stat-card fade-in" style={{ padding: '2rem', width: '100%', maxWidth: '800px', maxHeight: '90vh', overflowY: 'auto', border: '1px solid var(--primary)', background: 'var(--primary-light)', boxShadow: '0 10px 30px rgba(0,0,0,0.3)' }}>
+        <div className="modal-overlay">
+          <div className="modal-content" style={{ maxWidth: '800px' }}>
           <h3 style={{ marginBottom: '1.5rem', color: 'var(--primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
             <PenTool size={20} /> تعديل العملية رقم #{editingOp.id}
           </h3>
@@ -693,9 +693,11 @@ export default function Operations() {
             ))}
             {operations.length === 0 && (
               <tr>
-                <td colSpan={11} style={{ textAlign: 'center', padding: '4rem', color: 'var(--text-muted)' }}>
-                  <CheckCircle2 size={40} style={{ opacity: 0.2, marginBottom: '1rem' }} />
-                  <div>لا توجد عمليات مسجلة حتى الآن</div>
+                <td colSpan={12} style={{ padding: 0 }}>
+                  <div className="empty-state">
+                    <CheckCircle2 className="empty-state-icon" />
+                    <div className="empty-state-title">لا توجد عمليات مسجلة حتى الآن</div>
+                  </div>
                 </td>
               </tr>
             )}
@@ -731,7 +733,7 @@ export default function Operations() {
       )}
       {/* Toast Notification */}
       {toastMessage && (
-        <div style={{ position: 'fixed', bottom: '2rem', left: '50%', transform: 'translateX(-50%)', background: 'var(--success)', color: '#fff', padding: '1rem 2rem', borderRadius: '8px', zIndex: 1000, boxShadow: '0 4px 12px rgba(0,0,0,0.15)', fontWeight: 'bold' }}>
+        <div className="toast">
           {toastMessage}
         </div>
       )}

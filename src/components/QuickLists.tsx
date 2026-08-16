@@ -100,7 +100,9 @@ export default function QuickLists() {
             </div>
           ))}
           {devices.length === 0 && (
-            <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '2rem 0' }}>لا توجد أجهزة مضافة</div>
+            <div className="empty-state" style={{ minHeight: 'auto', padding: 'var(--space-4)' }}>
+              <div className="empty-state-title" style={{ fontSize: '1rem', color: 'var(--text-muted)' }}>لا توجد أجهزة مضافة</div>
+            </div>
           )}
         </div>
       </div>
@@ -135,7 +137,9 @@ export default function QuickLists() {
             </div>
           ))}
           {faults.length === 0 && (
-            <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '2rem 0' }}>لا توجد أعطال مضافة</div>
+            <div className="empty-state" style={{ minHeight: 'auto', padding: 'var(--space-4)' }}>
+              <div className="empty-state-title" style={{ fontSize: '1rem', color: 'var(--text-muted)' }}>لا توجد أعطال مضافة</div>
+            </div>
           )}
         </div>
       </div>

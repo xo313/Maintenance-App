@@ -228,7 +228,11 @@ export default function Technicians() {
           </div>
         ))}
         {technicians.length === 0 && (
-          <div style={{ gridColumn: '1 / -1', textAlign: 'center', color: 'var(--text-muted)' }}>لا يوجد فنيين مسجلين</div>
+          <div style={{ gridColumn: '1 / -1' }}>
+            <div className="empty-state">
+              <div className="empty-state-title">لا يوجد فنيين مسجلين</div>
+            </div>
+          </div>
         )}
       </div>
     </div>

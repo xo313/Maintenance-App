@@ -352,18 +352,22 @@ export default function CompatibilitySearch() {
           })}
           
           {filtered.length === 0 && searchTerm.trim() !== '' && (
-            <div style={{ gridColumn: '1 / -1', textAlign: 'center', padding: '4rem', color: 'var(--text-muted)', background: 'var(--bg-surface)', borderRadius: '16px', border: '1px dashed var(--border-color)' }}>
-              <Cpu size={48} style={{ opacity: 0.2, marginBottom: '1rem' }} />
-              <h3 style={{ fontSize: '1.2rem', fontWeight: 500 }}>لا يوجد نتائج مطابقة للبحث</h3>
-              <p style={{ marginTop: '0.5rem', opacity: 0.7 }}>جرب البحث بكلمات مختلفة أو قم بإضافة المكون.</p>
+            <div style={{ gridColumn: '1 / -1' }}>
+              <div className="empty-state">
+                <Cpu className="empty-state-icon" />
+                <div className="empty-state-title">لا يوجد نتائج مطابقة للبحث</div>
+                <div className="caption">جرب البحث بكلمات مختلفة أو قم بإضافة المكون.</div>
+              </div>
             </div>
           )}
 
           {searchTerm.trim() === '' && (
-            <div style={{ gridColumn: '1 / -1', textAlign: 'center', padding: '6rem 2rem', color: 'var(--text-muted)' }}>
-              <Search size={64} style={{ opacity: 0.1, marginBottom: '1.5rem', color: 'var(--primary)' }} />
-              <h3 style={{ fontSize: '1.5rem', fontWeight: 600, color: 'var(--text-main)' }}>مساعد جرد التفصيخ الذكي</h3>
-              <p style={{ marginTop: '0.5rem', fontSize: '1.1rem', opacity: 0.8 }}>ابدأ بالكتابة في مربع البحث للبحث عن أي آيسي واستخراج أماكن توافره في بوردات التفصيخ.</p>
+            <div style={{ gridColumn: '1 / -1' }}>
+              <div className="empty-state">
+                <Search className="empty-state-icon" style={{ opacity: 0.1, color: 'var(--primary)' }} />
+                <div className="empty-state-title" style={{ fontSize: '1.5rem' }}>مساعد جرد التفصيخ الذكي</div>
+                <div className="caption" style={{ fontSize: '1.1rem' }}>ابدأ بالكتابة في مربع البحث للبحث عن أي آيسي واستخراج أماكن توافره في بوردات التفصيخ.</div>
+              </div>
             </div>
           )}
         </div>
@@ -497,7 +501,12 @@ export default function CompatibilitySearch() {
                   ))}
                   {scrapDevices.length === 0 && (
                     <tr>
-                      <td colSpan={4} style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)' }}>لا توجد بوردات مسجلة في المخزن</td>
+                      <td colSpan={4} style={{ padding: 0 }}>
+                        <div className="empty-state">
+                          <CheckCircle2 className="empty-state-icon" />
+                          <div className="empty-state-title">لا توجد بوردات مسجلة في المخزن</div>
+                        </div>
+                      </td>
                     </tr>
                   )}
                 </tbody>

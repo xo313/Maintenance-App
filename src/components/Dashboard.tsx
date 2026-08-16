@@ -72,12 +72,9 @@ export default function Dashboard() {
   };
 
   if (!stats) return (
-    <div className="fade-in" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--text-muted)' }}>
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 'var(--space-4)' }}>
-        <div style={{ width: '40px', height: '40px', border: '3px solid var(--border)', borderTopColor: 'var(--accent)', borderRadius: '50%', animation: 'spin 1s linear infinite' }}></div>
-        <span>جاري تحميل البيانات...</span>
-      </div>
-      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+    <div className="fade-in empty-state">
+      <div className="spinner"></div>
+      <span style={{ marginTop: 'var(--space-4)' }}>جاري تحميل البيانات...</span>
     </div>
   );
 
@@ -201,10 +198,12 @@ export default function Dashboard() {
               ))}
               {debts.length === 0 && (
                 <tr>
-                  <td colSpan={6} style={{ textAlign: 'center', padding: 'var(--space-8)', color: 'var(--text-muted)' }}>
-                    <CheckCircle2 size={32} style={{ opacity: 0.3, marginBottom: 'var(--space-2)' }} />
-                    <div style={{ fontSize: '1.1rem', fontWeight: 500, color: 'var(--text)' }}>لا توجد ديون مسجلة!</div>
-                    <div className="caption">جميع الحسابات مصفرة والعمليات مسددة.</div>
+                  <td colSpan={6} style={{ padding: 0 }}>
+                    <div className="empty-state">
+                      <CheckCircle2 className="empty-state-icon" />
+                      <div className="empty-state-title">لا توجد ديون مسجلة!</div>
+                      <div className="caption">جميع الحسابات مصفرة والعمليات مسددة.</div>
+                    </div>
                   </td>
                 </tr>
               )}
@@ -220,32 +219,32 @@ export default function Dashboard() {
               <FileText size={24} /> كشف حساب وتصفية الشهر
             </h2>
             
-            <div style={{ background: 'var(--surface-elevated)', padding: 'var(--space-5)', borderRadius: 'var(--radius-md)', marginBottom: 'var(--space-6)', border: '1px solid var(--border)' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 'var(--space-2)' }}>
+            <div className="glass" style={{ padding: 'var(--space-5)', marginBottom: 'var(--space-6)' }}>
+              <div className="flex-between" style={{ marginBottom: 'var(--space-2)' }}>
                 <span className="caption">رأس المال الأساسي المخصص:</span>
                 <span style={{ fontWeight: 'bold', color: 'var(--text)' }}>{stats.baseCapital.toFixed(2)}</span>
               </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 'var(--space-2)' }}>
+              <div className="flex-between" style={{ marginBottom: 'var(--space-2)' }}>
                 <span className="caption">رأس المال المعلق (ديون السوق):</span>
                 <span style={{ color: 'var(--danger)' }}>- {stats.tiedCapital.toFixed(2)}</span>
               </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 'var(--space-4)', fontWeight: 'bold', fontSize: '1.05rem', color: 'var(--info)' }}>
+              <div className="flex-between" style={{ marginBottom: 'var(--space-4)', fontWeight: 'bold', fontSize: '1.05rem', color: 'var(--info)' }}>
                 <span>رأس المال المُسترد فعلياً بالدرج:</span>
                 <span>{stats.availableCapital.toFixed(2)}</span>
               </div>
               
               <hr style={{ borderColor: 'var(--border-light)', margin: 'var(--space-4) 0' }} />
 
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 'var(--space-2)' }}>
+              <div className="flex-between" style={{ marginBottom: 'var(--space-2)' }}>
                 <span className="caption">أرباح المحل النقدية المحصلة:</span>
                 <span style={{ color: 'var(--success)' }}>+ {stats.realizedShopProfit.toFixed(2)}</span>
               </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 'var(--space-4)' }}>
+              <div className="flex-between" style={{ marginBottom: 'var(--space-4)' }}>
                 <span className="caption">إجمالي سحوبات المحل الشخصية:</span>
                 <span style={{ color: 'var(--danger)' }}>- {stats.totalShopWithdrawal.toFixed(2)}</span>
               </div>
 
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 'var(--space-4)', fontSize: '1.25rem', fontWeight: 'bold', padding: 'var(--space-4)', background: 'var(--surface)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)' }}>
+              <div className="flex-between" style={{ marginTop: 'var(--space-4)', fontSize: '1.25rem', fontWeight: 'bold', padding: 'var(--space-4)', background: 'var(--bg)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)' }}>
                 <span style={{ color: 'var(--text)' }}>الصافي النهائي للمحل:</span>
                 <span style={{ color: stats.shopDue >= 0 ? 'var(--success)' : 'var(--danger)' }}>
                   {stats.shopDue.toFixed(2)}

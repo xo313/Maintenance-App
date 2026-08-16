@@ -137,7 +137,7 @@ export default function Withdrawals() {
             <input type="text" value={description} onChange={e => setDescription(e.target.value)} required />
           </div>
           
-          <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
+          <div className="flex-center gap-2">
             <button type="submit" className="btn btn-primary" style={{ flex: 1 }}>{editingId ? 'حفظ التعديل' : 'إضافة सحب'}</button>
             {editingId && (
               <button type="button" className="btn btn-secondary" onClick={cancelEdit}>إلغاء</button>
@@ -186,9 +186,11 @@ export default function Withdrawals() {
             ))}
             {withdrawals.length === 0 && (
               <tr>
-                <td colSpan={7} style={{ textAlign: 'center', padding: 'var(--space-8)', color: 'var(--text-muted)' }}>
-                  <CheckCircle2 size={32} style={{ opacity: 0.3, marginBottom: 'var(--space-2)' }} />
-                  <div>لا توجد سحوبات مسجلة</div>
+                <td colSpan={7} style={{ padding: 0 }}>
+                  <div className="empty-state">
+                    <CheckCircle2 className="empty-state-icon" />
+                    <div className="empty-state-title">لا توجد سحوبات مسجلة</div>
+                  </div>
                 </td>
               </tr>
             )}

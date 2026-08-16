@@ -357,7 +357,9 @@ export default function Settings() {
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
                   <strong style={{ display: 'block', marginBottom: 'var(--space-2)' }}>النسخ المتوفرة ({backups.length}/30):</strong>
                   {backups.length === 0 ? (
-                    <div style={{ padding: 'var(--space-4)', textAlign: 'center', color: 'var(--text-muted)', background: 'var(--surface-elevated)', borderRadius: 'var(--radius-sm)' }}>لا توجد نسخ احتياطية مسجلة</div>
+                    <div className="empty-state" style={{ minHeight: 'auto', padding: 'var(--space-4)' }}>
+                      <div className="empty-state-title" style={{ fontSize: '1rem', color: 'var(--text-muted)' }}>لا توجد نسخ احتياطية مسجلة</div>
+                    </div>
                   ) : (
                     backups.map(b => (
                       <div key={b.filename} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--surface-elevated)', padding: 'var(--space-4)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }}>
