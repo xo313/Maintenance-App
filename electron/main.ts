@@ -5,6 +5,7 @@ import * as xlsx from 'xlsx';
 import { db, initDB } from './database.js';
 import type { Operation, Withdrawal, Technician } from '../src/types';
 import { createBackup, listBackups, readBackup, getCanonicalDatabaseHash } from './backup.js';
+import { runAutomaticMigration } from './migration.js';
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -28,8 +29,10 @@ function createWindow() {
   });
 
   mainWindow.setMenuBarVisibility(false);
-
   mainWindow.maximize();
+
+  // Run automatic migration from legacy paths if necessary
+  runAutomaticMigration();
 
   initDB();
   setupIPC();

@@ -27,7 +27,7 @@ class SimpleDB {
   };
 
   constructor() {
-    this.load();
+    // Database will be loaded explicitly when initDB() is called
   }
 
   load() {
