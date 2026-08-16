@@ -2,7 +2,8 @@
   "settings": {
     "base_capital": 1000,
     "whatsapp_template": "السلام عليكم [اسم_الزبون] 👋\nنود إعلامك بأن جهازك ([اسم_الجهاز]) قد تمت صيانته وهو جاهز للاستلام.\nالمبلغ المطلوب: [المبلغ] دينار.\nشكراً لاختيارك مركزنا! 🛠️✨",
-    "theme": "dark"
+    "theme": "dark",
+    "shop_name": "مركز الصيانة"
   },
   "months": [
     {
@@ -52,7 +53,8 @@
       "shop_profit": 42000,
       "tech_profit": 18000,
       "payment_status": "cash",
-      "status": "delivered"
+      "status": "delivered",
+      "faults": []
     },
     {
       "id": 1786878472514,
@@ -68,7 +70,8 @@
       "payment_status": "cash",
       "status": "delivered",
       "paid_in_month_id": 2,
-      "paid_at": "2026-08-16T11:07:52.528Z"
+      "paid_at": "2026-08-16T11:07:52.528Z",
+      "faults": []
     },
     {
       "id": 1786878472535,
@@ -82,7 +85,8 @@
       "shop_profit": 21000,
       "tech_profit": 9000,
       "payment_status": "cash",
-      "status": "delivered"
+      "status": "delivered",
+      "faults": []
     }
   ],
   "withdrawals": [],

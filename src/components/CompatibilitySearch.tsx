@@ -276,8 +276,8 @@ export default function CompatibilitySearch() {
           </div>
         </div>
 
-        <div style={{ display: 'flex', gap: '1rem' }}>
-          <button className="btn" onClick={() => setIsScrapModalOpen(true)} style={{ background: 'var(--primary-light)', color: 'var(--primary)', borderColor: 'var(--primary-light)' }}>
+        <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
+          <button className="btn btn-secondary" onClick={() => setIsScrapModalOpen(true)}>
             <PackageSearch size={20} /> إدارة مخزن التفصيخ
           </button>
           <label className="btn" style={{ background: 'var(--success-bg)', color: 'var(--success)', borderColor: 'var(--success-bg)', cursor: isImporting ? 'not-allowed' : 'pointer', margin: 0 }}>
@@ -422,7 +422,7 @@ export default function CompatibilitySearch() {
                 <textarea rows={2} value={notes} onChange={e => setNotes(e.target.value)} placeholder="أرقام بديلة، معلومات فنية..." />
               </div>
               
-              <div style={{ display: 'flex', gap: '1rem', marginTop: '1.5rem' }}>
+              <div style={{ display: 'flex', gap: 'var(--space-3)', marginTop: 'var(--space-6)' }}>
                 <button type="button" className="btn" style={{ flex: 1 }} onClick={closeModal}>إلغاء الأمر</button>
                 <button type="submit" className="btn btn-primary" style={{ flex: 1 }}>{editingId ? 'حفظ التعديلات' : 'إضافة للقاعدة'}</button>
               </div>

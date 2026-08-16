@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Edit, Trash2, PlusCircle, CheckCircle2 } from 'lucide-react';
 import type { Withdrawal, Technician } from '../types';
 import { useDialog } from './ui/DialogProvider';
 
@@ -88,15 +89,21 @@ export default function Withdrawals() {
   };
 
   return (
-    <div>
+    <div className="fade-in">
       <div className="header-flex">
-        <h2>السحوبات والمصروفات</h2>
+        <h2 className="page-title">السحوبات والمصروفات</h2>
       </div>
 
-      <div className="glass" style={{ padding: '1.5rem', marginBottom: '2rem' }}>
-        <h3 style={{ marginBottom: '1rem' }}>{editingId ? 'تعديل السحب' : 'تسجيل سحب جديد'}</h3>
-        <form onSubmit={handleSubmit} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 2fr auto', gap: '1rem', alignItems: 'end' }}>
-          
+      <div className="stat-card" style={{ padding: 'var(--space-6)', marginBottom: 'var(--space-8)' }}>
+        <h3 style={{ marginBottom: 'var(--space-4)', display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-main)' }}>
+          {editingId ? (
+            <><Edit size={20} color="var(--primary)" /> تعديل السحب</>
+          ) : (
+            <><PlusCircle size={20} color="var(--primary)" /> تسجيل سحب جديد</>
+          )}
+        </h3>
+        
+        <form onSubmit={handleSubmit} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 'var(--space-4)', alignItems: 'end' }}>
           <div className="form-group" style={{ marginBottom: 0 }}>
             <label>نوع السحب</label>
             <select value={type} onChange={e => setType(e.target.value as any)}>
@@ -130,16 +137,16 @@ export default function Withdrawals() {
             <input type="text" value={description} onChange={e => setDescription(e.target.value)} required />
           </div>
           
-          <div style={{ display: 'flex', gap: '0.5rem' }}>
-            <button type="submit" className="btn">{editingId ? 'تعديل' : 'حفظ'}</button>
+          <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
+            <button type="submit" className="btn btn-primary" style={{ flex: 1 }}>{editingId ? 'حفظ التعديل' : 'إضافة सحب'}</button>
             {editingId && (
-              <button type="button" className="btn" style={{ background: 'var(--text-muted)' }} onClick={cancelEdit}>إلغاء</button>
+              <button type="button" className="btn btn-secondary" onClick={cancelEdit}>إلغاء</button>
             )}
           </div>
         </form>
       </div>
 
-      <div className="glass table-container">
+      <div className="table-container">
         <table>
           <thead>
             <tr>
@@ -155,32 +162,35 @@ export default function Withdrawals() {
           <tbody>
             {withdrawals.map(w => (
               <tr key={w.id}>
-                <td>{w.id}</td>
-                <td>{w.date}</td>
+                <td><span className="tag">#{w.id}</span></td>
+                <td style={{ color: 'var(--text-muted)' }}>{w.date}</td>
                 <td>
-                  <span style={{ 
-                    padding: '4px 8px', 
-                    borderRadius: '4px', 
-                    fontSize: '0.85rem',
-                    background: w.type === 'shop_withdrawal' ? 'rgba(239, 68, 68, 0.2)' : 'rgba(59, 130, 246, 0.2)',
-                    color: w.type === 'shop_withdrawal' ? 'var(--danger)' : 'var(--primary)'
-                  }}>
+                  <span className={`badge ${w.type === 'shop_withdrawal' ? 'badge-danger' : 'badge-primary'}`}>
                     {w.type === 'shop_withdrawal' ? 'سحب محل' : 'سحب فني'}
                   </span>
                 </td>
-                <td style={{ fontWeight: 'bold' }}>{w.amount.toFixed(2)}</td>
-                <td>{w.technician_name || '-'}</td>
-                <td>{w.description}</td>
+                <td style={{ fontWeight: 600, color: 'var(--text)' }}>{w.amount.toFixed(2)}</td>
+                <td style={{ fontWeight: 500 }}>{w.technician_name || '-'}</td>
+                <td style={{ color: 'var(--text-muted)' }}>{w.description}</td>
                 <td>
                   <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'center' }}>
-                    <button onClick={() => handleEdit(w)} className="btn" style={{ padding: '4px 8px', fontSize: '0.8rem', background: 'var(--primary)' }}>تعديل</button>
-                    <button onClick={() => handleDelete(w.id)} className="btn" style={{ padding: '4px 8px', fontSize: '0.8rem', background: 'var(--danger)' }}>حذف</button>
+                    <button onClick={() => handleEdit(w)} className="btn btn-icon" title="تعديل">
+                      <Edit size={18} />
+                    </button>
+                    <button onClick={() => handleDelete(w.id)} className="btn btn-icon danger" title="حذف">
+                      <Trash2 size={18} />
+                    </button>
                   </div>
                 </td>
               </tr>
             ))}
             {withdrawals.length === 0 && (
-              <tr><td colSpan={7} style={{ textAlign: 'center' }}>لا توجد سحوبات مسجلة</td></tr>
+              <tr>
+                <td colSpan={7} style={{ textAlign: 'center', padding: 'var(--space-8)', color: 'var(--text-muted)' }}>
+                  <CheckCircle2 size={32} style={{ opacity: 0.3, marginBottom: 'var(--space-2)' }} />
+                  <div>لا توجد سحوبات مسجلة</div>
+                </td>
+              </tr>
             )}
           </tbody>
         </table>

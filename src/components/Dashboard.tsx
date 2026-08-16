@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
-import { Wallet, Banknote, TrendingUp, AlertTriangle, FileText, CheckCircle2 } from 'lucide-react';
+import { Wallet, Banknote, TrendingUp, AlertTriangle, FileText, CheckCircle2, Plus, Search, CalendarCheck } from 'lucide-react';
 import type { DashboardStats, Operation } from '../types';
 import { useDialog } from './ui/DialogProvider';
+import { StatusBadge } from './ui/Badge';
 
 export default function Dashboard() {
   const [stats, setStats] = useState<DashboardStats | null>(null);
@@ -70,172 +71,190 @@ export default function Dashboard() {
     }
   };
 
-  if (!stats) return <div className="fade-in" style={{ padding: '2rem', textAlign: 'center' }}>جاري تحميل البيانات...</div>;
+  if (!stats) return (
+    <div className="fade-in" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--text-muted)' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 'var(--space-4)' }}>
+        <div style={{ width: '40px', height: '40px', border: '3px solid var(--border)', borderTopColor: 'var(--accent)', borderRadius: '50%', animation: 'spin 1s linear infinite' }}></div>
+        <span>جاري تحميل البيانات...</span>
+      </div>
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+    </div>
+  );
 
   return (
     <div className="fade-in">
-      <div className="header-flex">
-        <h2 className="page-title">لوحة التحكم</h2>
-        <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
-          <button className="btn" style={{ background: 'var(--danger-bg)', color: 'var(--danger)' }} onClick={() => setShowSettlementModal(true)}>
-            <FileText size={20} /> تصفية الشهر الحالي
+      
+      <div style={{ marginBottom: 'var(--space-8)' }}>
+        <h2 className="section-title" style={{ marginBottom: 'var(--space-2)' }}>نظرة عامة على النشاط المالي</h2>
+        <p className="caption">ملخص سريع للإيرادات والمصروفات للشهر الحالي.</p>
+      </div>
+
+      <div className="dashboard-stats-grid">
+        <div className="stat-card" style={{ borderTop: '3px solid var(--info)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+            <div className="stat-title">الكاش المتوقع في الصندوق</div>
+            <div style={{ padding: '8px', background: 'var(--info-bg)', borderRadius: 'var(--radius-sm)', color: 'var(--info)' }}>
+              <Wallet size={22} />
+            </div>
+          </div>
+          <div className="stat-value" style={{ color: 'var(--info)' }}>
+            {stats.cashBox.toLocaleString()}
+          </div>
+          <div className="caption">
+            رأس المال + الاستلام - السحوبات والتكاليف
+          </div>
+        </div>
+
+        <div className="stat-card" style={{ borderTop: '3px solid var(--success)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+            <div className="stat-title">الأرباح الكلية</div>
+            <div style={{ padding: '8px', background: 'var(--success-bg)', borderRadius: 'var(--radius-sm)', color: 'var(--success)' }}>
+              <TrendingUp size={22} />
+            </div>
+          </div>
+          <div className="stat-value" style={{ color: 'var(--success)' }}>
+            {stats.totalProfit.toLocaleString()}
+          </div>
+          <div className="caption">
+            صافي أرباح العمليات (الفرق بين السعر والتكلفة)
+          </div>
+        </div>
+
+        <div className="stat-card" style={{ borderTop: '3px solid var(--warning)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+            <div className="stat-title">إجمالي الديون</div>
+            <div style={{ padding: '8px', background: 'var(--warning-bg)', borderRadius: 'var(--radius-sm)', color: 'var(--warning)' }}>
+              <AlertTriangle size={22} />
+            </div>
+          </div>
+          <div className="stat-value" style={{ color: 'var(--warning)' }}>
+            {stats.debtTotal.toLocaleString()}
+          </div>
+          <div className="caption">
+            المبالغ المتبقية للعمليات غير المسددة
+          </div>
+        </div>
+
+        <div className="stat-card" style={{ borderTop: '3px solid var(--danger)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+            <div className="stat-title">إجمالي السحوبات</div>
+            <div style={{ padding: '8px', background: 'var(--danger-bg)', borderRadius: 'var(--radius-sm)', color: 'var(--danger)' }}>
+              <Banknote size={22} />
+            </div>
+          </div>
+          <div className="stat-value" style={{ color: 'var(--danger)' }}>
+            {stats.totalWithdrawals.toLocaleString()}
+          </div>
+          <div className="caption">
+            إجمالي مصروفات المحل والنثريات والفنيين
+          </div>
+        </div>
+      </div>
+
+      <div style={{ marginBottom: 'var(--space-8)' }}>
+        <h2 className="section-title" style={{ marginBottom: 'var(--space-4)' }}>إجراءات سريعة</h2>
+        <div style={{ display: 'flex', gap: 'var(--space-4)', flexWrap: 'wrap' }}>
+          <button className="btn btn-primary" onClick={() => document.querySelector<HTMLElement>('.nav-item:nth-child(4)')?.click()}>
+            <Plus size={18} /> إضافة عملية صيانة
+          </button>
+          <button className="btn" onClick={() => document.querySelector<HTMLElement>('.nav-item:nth-child(6)')?.click()}>
+            <Search size={18} /> بحث عن توافق آيسي
+          </button>
+          <button className="btn btn-secondary" style={{ color: 'var(--warning)' }} onClick={() => setShowSettlementModal(true)}>
+            <CalendarCheck size={18} /> تصفية وإغلاق الشهر
           </button>
         </div>
       </div>
 
-      <div className="dashboard-grid">
-        {/* Card 1: Expected Cash (الكاش المتوقع في الصندوق) */}
-        <div className="stat-card" style={{ borderLeft: '4px solid #3b82f6', background: 'linear-gradient(to right, rgba(59, 130, 246, 0.05), transparent)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-            <div className="stat-title" style={{ fontSize: '1.1rem', fontWeight: 600, color: 'var(--text-main)' }}>الكاش المتوقع في الصندوق</div>
-            <div style={{ padding: '10px', background: '#3b82f620', borderRadius: '12px', color: '#3b82f6' }}>
-              <Wallet size={26} />
-            </div>
-          </div>
-          <div className="stat-value" style={{ color: '#3b82f6', display: 'flex', alignItems: 'baseline', gap: '0.4rem', marginTop: '0.5rem' }}>
-            {stats.cashBox.toLocaleString()}
-          </div>
-          <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginTop: '0.5rem' }}>
-            رأس المال + إجمالي المبالغ المستلمة - إجمالي التكاليف والسحوبات
-          </div>
+      <div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-4)' }}>
+          <h2 className="section-title">سجل ديون العملاء</h2>
+          <span className="badge badge-warning">الإجمالي: {stats.debtTotal.toFixed(2)}</span>
         </div>
-
-        {/* Card 2: Total Profits (الأرباح الكلية) */}
-        <div className="stat-card" style={{ borderLeft: '4px solid #10b981', background: 'linear-gradient(to right, rgba(16, 185, 129, 0.05), transparent)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-            <div className="stat-title" style={{ fontSize: '1.1rem', fontWeight: 600, color: 'var(--text-main)' }}>الأرباح الكلية</div>
-            <div style={{ padding: '10px', background: '#10b98120', borderRadius: '12px', color: '#10b981' }}>
-              <TrendingUp size={26} />
-            </div>
-          </div>
-          <div className="stat-value" style={{ color: '#10b981', display: 'flex', alignItems: 'baseline', gap: '0.4rem', marginTop: '0.5rem' }}>
-            {stats.totalProfit.toLocaleString()}
-          </div>
-          <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginTop: '0.5rem' }}>
-            صافي الأرباح الكلية لجميع العمليات (الفرق بين سعر البيع والتكلفة)
-          </div>
-        </div>
-
-        {/* Card 3: Total Debts (إجمالي الديون) */}
-        <div className="stat-card" style={{ borderLeft: '4px solid #f59e0b', background: 'linear-gradient(to right, rgba(245, 158, 11, 0.05), transparent)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-            <div className="stat-title" style={{ fontSize: '1.1rem', fontWeight: 600, color: 'var(--text-main)' }}>إجمالي الديون</div>
-            <div style={{ padding: '10px', background: '#f59e0b20', borderRadius: '12px', color: '#f59e0b' }}>
-              <AlertTriangle size={26} />
-            </div>
-          </div>
-          <div className="stat-value" style={{ color: '#f59e0b', display: 'flex', alignItems: 'baseline', gap: '0.4rem', marginTop: '0.5rem' }}>
-            {stats.debtTotal.toLocaleString()}
-          </div>
-          <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginTop: '0.5rem' }}>
-            مجموع المبالغ المتبقية في ذمة الزبائن للعمليات غير المسددة
-          </div>
-        </div>
-
-        {/* Card 4: Total Withdrawals (إجمالي السحوبات) */}
-        <div className="stat-card" style={{ borderLeft: '4px solid #ef4444', background: 'linear-gradient(to right, rgba(239, 68, 68, 0.05), transparent)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-            <div className="stat-title" style={{ fontSize: '1.1rem', fontWeight: 600, color: 'var(--text-main)' }}>إجمالي السحوبات</div>
-            <div style={{ padding: '10px', background: '#ef444420', borderRadius: '12px', color: '#ef4444' }}>
-              <Banknote size={26} />
-            </div>
-          </div>
-          <div className="stat-value" style={{ color: '#ef4444', display: 'flex', alignItems: 'baseline', gap: '0.4rem', marginTop: '0.5rem' }}>
-            {stats.totalWithdrawals.toLocaleString()}
-          </div>
-          <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginTop: '0.5rem' }}>
-            إجمالي السحوبات والمصروفات النقدية (الإدارة، النثريات، الفنيين)
-          </div>
-        </div>
-      </div>
-
-      <div className="table-container" style={{ marginTop: '2rem' }}>
-        <div style={{ padding: '1rem', display: 'flex', alignItems: 'center', gap: '1rem', borderBottom: '1px solid var(--border-color)' }}>
-          <AlertTriangle color="var(--danger)" size={20} />
-          <h3 style={{ margin: 0, fontSize: '1.1rem' }}>سجل العملاء الذين عليهم دين (إجمالي: {stats.debtTotal.toFixed(2)})</h3>
-        </div>
-        <table style={{ border: 'none' }}>
-          <thead>
-            <tr>
-              <th>رقم العملية</th>
-              <th>التاريخ</th>
-              <th>اسم الزبون</th>
-              <th>الفني</th>
-              <th>المبلغ المتبقي</th>
-              <th style={{ textAlign: 'center' }}>إجراءات</th>
-            </tr>
-          </thead>
-          <tbody>
-            {debts.map(debt => (
-              <tr key={debt.id}>
-                <td><span className="tag">#{debt.id}</span></td>
-                <td>{debt.date}</td>
-                <td style={{ fontWeight: 500 }}>{debt.customer_name || '-'}</td>
-                <td>{debt.technician_name}</td>
-                <td style={{ color: 'var(--danger)', fontWeight: 'bold' }}>{debt.price ? debt.price.toFixed(2) : '0.00'}</td>
-                <td style={{ textAlign: 'center' }}>
-                  <button className="btn" style={{ padding: '0.4rem 1rem', background: 'var(--success-bg)', color: 'var(--success)', border: 'none' }} onClick={() => handlePayDebt(debt.id)}>
-                    <CheckCircle2 size={16} /> تسديد الدين
-                  </button>
-                </td>
-              </tr>
-            ))}
-            {debts.length === 0 && (
+        
+        <div className="table-container">
+          <table>
+            <thead>
               <tr>
-                <td colSpan={6} style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)' }}>
-                  <CheckCircle2 size={40} style={{ opacity: 0.2, marginBottom: '1rem' }} />
-                  <div>لا توجد ديون مسجلة حالياً، كل الحسابات مصفرة!</div>
-                </td>
+                <th>رقم العملية</th>
+                <th>التاريخ</th>
+                <th>اسم الزبون</th>
+                <th>الفني</th>
+                <th>المبلغ المتبقي</th>
+                <th style={{ textAlign: 'center' }}>إجراءات</th>
               </tr>
-            )}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {debts.map(debt => (
+                <tr key={debt.id}>
+                  <td><span className="tag">#{debt.id}</span></td>
+                  <td>{debt.date}</td>
+                  <td style={{ fontWeight: 600, color: 'var(--text)' }}>{debt.customer_name || '-'}</td>
+                  <td>{debt.technician_name}</td>
+                  <td style={{ color: 'var(--danger)', fontWeight: 'bold' }}>{debt.price ? debt.price.toFixed(2) : '0.00'}</td>
+                  <td style={{ textAlign: 'center' }}>
+                    <button className="btn btn-secondary" style={{ color: 'var(--success)' }} onClick={() => handlePayDebt(debt.id)}>
+                      <CheckCircle2 size={16} /> تسديد
+                    </button>
+                  </td>
+                </tr>
+              ))}
+              {debts.length === 0 && (
+                <tr>
+                  <td colSpan={6} style={{ textAlign: 'center', padding: 'var(--space-8)', color: 'var(--text-muted)' }}>
+                    <CheckCircle2 size={32} style={{ opacity: 0.3, marginBottom: 'var(--space-2)' }} />
+                    <div style={{ fontSize: '1.1rem', fontWeight: 500, color: 'var(--text)' }}>لا توجد ديون مسجلة!</div>
+                    <div className="caption">جميع الحسابات مصفرة والعمليات مسددة.</div>
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       {showSettlementModal && (
         <div className="modal-overlay">
-          <div className="modal-content" style={{ maxWidth: '550px' }}>
-            <h2 style={{ marginBottom: '1.5rem', color: 'var(--danger)', textAlign: 'center', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '1rem' }}>
+          <div className="modal-content" style={{ maxWidth: '600px' }}>
+            <h2 style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', color: 'var(--warning)', borderBottom: '1px solid var(--border)', paddingBottom: 'var(--space-4)' }}>
               <FileText size={24} /> كشف حساب وتصفية الشهر
             </h2>
             
-            <div style={{ background: 'var(--bg-base)', padding: '1.5rem', borderRadius: '12px', marginBottom: '1.5rem', border: '1px solid var(--border-color)' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.8rem' }}>
-                <span style={{ color: 'var(--text-muted)' }}>رأس المال الأساسي المخصص:</span>
-                <span style={{ fontWeight: 'bold' }}>{stats.baseCapital.toFixed(2)}</span>
+            <div style={{ background: 'var(--surface-elevated)', padding: 'var(--space-5)', borderRadius: 'var(--radius-md)', marginBottom: 'var(--space-6)', border: '1px solid var(--border)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 'var(--space-2)' }}>
+                <span className="caption">رأس المال الأساسي المخصص:</span>
+                <span style={{ fontWeight: 'bold', color: 'var(--text)' }}>{stats.baseCapital.toFixed(2)}</span>
               </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.8rem', color: 'var(--danger)' }}>
-                <span>رأس المال المعلق (ديون السوق):</span>
-                <span>- {stats.tiedCapital.toFixed(2)}</span>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 'var(--space-2)' }}>
+                <span className="caption">رأس المال المعلق (ديون السوق):</span>
+                <span style={{ color: 'var(--danger)' }}>- {stats.tiedCapital.toFixed(2)}</span>
               </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1rem', fontWeight: 'bold', color: 'var(--primary)', fontSize: '1.1rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 'var(--space-4)', fontWeight: 'bold', fontSize: '1.05rem', color: 'var(--info)' }}>
                 <span>رأس المال المُسترد فعلياً بالدرج:</span>
                 <span>{stats.availableCapital.toFixed(2)}</span>
               </div>
               
-              <hr style={{ borderColor: 'var(--border-light)', margin: '1rem 0', borderStyle: 'solid', borderWidth: '1px' }} />
+              <hr style={{ borderColor: 'var(--border-light)', margin: 'var(--space-4) 0' }} />
 
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.8rem', color: 'var(--success)' }}>
-                <span>أرباح المحل النقدية المحصلة:</span>
-                <span>+ {stats.realizedShopProfit.toFixed(2)}</span>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 'var(--space-2)' }}>
+                <span className="caption">أرباح المحل النقدية المحصلة:</span>
+                <span style={{ color: 'var(--success)' }}>+ {stats.realizedShopProfit.toFixed(2)}</span>
               </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1rem', color: 'var(--danger)' }}>
-                <span>إجمالي سحوبات المحل الشخصية:</span>
-                <span>- {stats.totalShopWithdrawal.toFixed(2)}</span>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 'var(--space-4)' }}>
+                <span className="caption">إجمالي سحوبات المحل الشخصية:</span>
+                <span style={{ color: 'var(--danger)' }}>- {stats.totalShopWithdrawal.toFixed(2)}</span>
               </div>
 
-              <hr style={{ borderColor: 'var(--border-light)', margin: '1rem 0', borderStyle: 'solid', borderWidth: '1px' }} />
-
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '1.5rem', fontSize: '1.4rem', fontWeight: 'bold', padding: '1rem', background: 'var(--primary-light)', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
-                <span style={{ color: 'var(--text-main)' }}>الصافي النهائي للمحل:</span>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 'var(--space-4)', fontSize: '1.25rem', fontWeight: 'bold', padding: 'var(--space-4)', background: 'var(--surface)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)' }}>
+                <span style={{ color: 'var(--text)' }}>الصافي النهائي للمحل:</span>
                 <span style={{ color: stats.shopDue >= 0 ? 'var(--success)' : 'var(--danger)' }}>
                   {stats.shopDue.toFixed(2)}
                 </span>
               </div>
             </div>
 
-            <div className="form-group" style={{ marginBottom: '1.5rem' }}>
-              <label style={{ fontSize: '1.05rem' }}>لبدء شهر جديد، يرجى إدخال رأس المال المخصص له:</label>
+            <div className="form-group" style={{ marginBottom: 'var(--space-6)' }}>
+              <label>لبدء شهر جديد، يرجى إدخال رأس المال المخصص له:</label>
               <input 
                 type="number" 
                 placeholder="مثال: 5000"
@@ -243,16 +262,15 @@ export default function Dashboard() {
                 value={newCapital}
                 onChange={e => setNewCapital(e.target.value)}
                 autoFocus
-                style={{ fontSize: '1.2rem', padding: '1rem' }}
               />
             </div>
 
-            <div style={{ display: 'flex', gap: '1rem' }}>
+            <div style={{ display: 'flex', gap: 'var(--space-3)' }}>
               <button className="btn" style={{ flex: 1 }} onClick={() => setShowSettlementModal(false)} disabled={isClosing}>
                 إلغاء الأمر
               </button>
-              <button className="btn btn-primary" style={{ flex: 2, background: 'var(--danger)' }} onClick={confirmCloseMonth} disabled={isClosing}>
-                {isClosing ? 'جاري التصفية...' : 'تأكيد وحفظ نسخة احتياطية وإغلاق'}
+              <button className="btn btn-danger" style={{ flex: 2 }} onClick={confirmCloseMonth} disabled={isClosing}>
+                {isClosing ? 'جاري التصفية...' : 'تأكيد الحفظ والتصفية'}
               </button>
             </div>
           </div>

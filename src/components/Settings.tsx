@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Settings as SettingsIcon, Users, Sliders, List, Save, Download, AlertTriangle, Moon, Sun, Database, RefreshCw } from 'lucide-react';
+import { Settings as SettingsIcon, Users, Sliders, List, Save, Download, AlertTriangle, Moon, Sun, Database, RefreshCw, RotateCcw } from 'lucide-react';
 import type { BackupMetadata } from '../types';
 import Technicians from './Technicians';
 import QuickLists from './QuickLists';
@@ -201,9 +201,9 @@ export default function Settings() {
         </h2>
       </div>
 
-      <div style={{ display: 'flex', gap: '2rem', minHeight: '600px' }}>
+      <div style={{ display: 'flex', gap: 'var(--space-6)', minHeight: '600px' }}>
         {/* Settings Sidebar */}
-        <div style={{ width: '220px', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+        <div style={{ width: '240px', display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
           <button 
             className={`btn ${activeTab === 'technicians' ? 'active' : ''}`}
             onClick={() => setActiveTab('technicians')}
@@ -212,7 +212,8 @@ export default function Settings() {
               background: activeTab === 'technicians' ? 'var(--primary-light)' : 'transparent',
               color: activeTab === 'technicians' ? 'var(--primary)' : 'var(--text-main)',
               border: 'none',
-              boxShadow: 'none'
+              boxShadow: 'none',
+              padding: 'var(--space-3) var(--space-4)'
             }}
           >
             <Users size={18} />
@@ -227,7 +228,8 @@ export default function Settings() {
               background: activeTab === 'quicklists' ? 'var(--primary-light)' : 'transparent',
               color: activeTab === 'quicklists' ? 'var(--primary)' : 'var(--text-main)',
               border: 'none',
-              boxShadow: 'none'
+              boxShadow: 'none',
+              padding: 'var(--space-3) var(--space-4)'
             }}
           >
             <List size={18} />
@@ -242,7 +244,8 @@ export default function Settings() {
               background: activeTab === 'general' ? 'var(--primary-light)' : 'transparent',
               color: activeTab === 'general' ? 'var(--primary)' : 'var(--text-main)',
               border: 'none',
-              boxShadow: 'none'
+              boxShadow: 'none',
+              padding: 'var(--space-3) var(--space-4)'
             }}
           >
             <Sliders size={18} />
@@ -251,17 +254,17 @@ export default function Settings() {
         </div>
 
         {/* Settings Content */}
-        <div style={{ flex: 1, padding: '0 1rem' }}>
+        <div style={{ flex: 1, padding: '0 var(--space-4)' }}>
           {activeTab === 'technicians' && <Technicians />}
           {activeTab === 'quicklists' && <QuickLists />}
           {activeTab === 'general' && settings && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', maxWidth: '800px' }}>
-              <div className="stat-card fade-in" style={{ padding: '2rem' }}>
-                <h3 style={{ marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-6)', maxWidth: '800px' }}>
+              <div className="stat-card fade-in" style={{ padding: 'var(--space-6)' }}>
+                <h3 style={{ marginBottom: 'var(--space-4)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                   <Sliders size={20} color="var(--primary)" /> الإعدادات العامة للمركز
                 </h3>
                 
-                <div className="form-group" style={{ marginBottom: '1.5rem' }}>
+                <div className="form-group" style={{ marginBottom: 'var(--space-4)' }}>
                   <label>اسم المركز (Shop Name)</label>
                   <input 
                     type="text" 
@@ -272,7 +275,7 @@ export default function Settings() {
                   <small style={{ color: 'var(--text-muted)' }}>سيتم عرض هذا الاسم في أعلى لوحة التحكم.</small>
                 </div>
 
-                <div className="form-group" style={{ marginBottom: '1.5rem' }}>
+                <div className="form-group" style={{ marginBottom: 'var(--space-4)' }}>
                   <label>قالب رسالة الواتساب (WhatsApp Template)</label>
                   <textarea 
                     rows={4}
@@ -280,7 +283,7 @@ export default function Settings() {
                     onChange={(e) => setWhatsappTemplate(e.target.value)}
                     placeholder="اكتب رسالة الواتساب هنا..."
                   />
-                  <div style={{ marginTop: '0.5rem', fontSize: '0.9rem', color: 'var(--text-muted)', background: 'var(--bg-base)', padding: '0.8rem', borderRadius: '8px' }}>
+                  <div style={{ marginTop: 'var(--space-2)', fontSize: '0.9rem', color: 'var(--text-muted)', background: 'var(--surface-elevated)', padding: 'var(--space-3)', borderRadius: 'var(--radius-sm)' }}>
                     <strong>المتغيرات المتاحة للاستخدام:</strong><br />
                     - <code>[اسم_الزبون]</code> : يتم استبداله باسم صاحب الجهاز.<br />
                     - <code>[اسم_الجهاز]</code> : يتم استبداله باسم الجهاز المصلح.<br />
@@ -290,29 +293,29 @@ export default function Settings() {
                   </div>
                 </div>
 
-                <div className="form-group" style={{ marginBottom: '2rem' }}>
+                <div className="form-group" style={{ marginBottom: 'var(--space-6)' }}>
                   <label>مظهر التطبيق (Theme)</label>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginTop: '0.5rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)', marginTop: 'var(--space-2)' }}>
                     <button 
                       className="btn" 
                       onClick={handleToggleTheme}
-                      style={{ background: theme === 'dark' ? 'var(--bg-elevated)' : 'var(--primary-light)', borderColor: theme === 'light' ? 'var(--primary)' : 'var(--border-color)', color: theme === 'light' ? 'var(--primary)' : 'var(--text-main)' }}
+                      style={{ background: theme === 'dark' ? 'var(--surface-elevated)' : 'var(--primary-light)', borderColor: theme === 'light' ? 'var(--primary)' : 'var(--border-color)', color: theme === 'light' ? 'var(--primary)' : 'var(--text-main)' }}
                     >
                       <Sun size={18} /> نهاري
                     </button>
                     <button 
                       className="btn" 
                       onClick={handleToggleTheme}
-                      style={{ background: theme === 'light' ? 'var(--bg-elevated)' : 'var(--primary-light)', borderColor: theme === 'dark' ? 'var(--primary)' : 'var(--border-color)', color: theme === 'dark' ? 'var(--primary)' : 'var(--text-main)' }}
+                      style={{ background: theme === 'light' ? 'var(--surface-elevated)' : 'var(--primary-light)', borderColor: theme === 'dark' ? 'var(--primary)' : 'var(--border-color)', color: theme === 'dark' ? 'var(--primary)' : 'var(--text-main)' }}
                     >
                       <Moon size={18} /> ليلي
                     </button>
                   </div>
                 </div>
 
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
                   {saveMessage && (
-                    <div style={{ padding: '0.75rem', background: 'var(--success-bg)', color: 'var(--success)', borderRadius: '8px', border: '1px solid var(--success)', fontSize: '0.95rem' }}>
+                    <div style={{ padding: 'var(--space-3)', background: 'var(--success-bg)', color: 'var(--success)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--success)', fontSize: '0.95rem' }}>
                       {saveMessage}
                     </div>
                   )}
@@ -325,12 +328,12 @@ export default function Settings() {
               </div>
 
               {/* Backup and Restore Section */}
-              <div className="stat-card fade-in" style={{ padding: '2rem' }}>
-                <h3 style={{ marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--success)' }}>
+              <div className="stat-card fade-in" style={{ padding: 'var(--space-6)' }}>
+                <h3 style={{ marginBottom: 'var(--space-4)', display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--success)' }}>
                   <Database size={20} /> النسخ الاحتياطية
                 </h3>
                 
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--bg-base)', padding: '1rem', borderRadius: '8px', border: '1px solid var(--border-color)', marginBottom: '1.5rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--surface-elevated)', padding: 'var(--space-4)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', marginBottom: 'var(--space-4)' }}>
                   <div>
                     <strong style={{ display: 'block', marginBottom: '0.2rem' }}>تصدير إلى Excel</strong>
                     <span style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>تصدير جميع بيانات العمليات والفنيين والسحوبات إلى ملف إكسل.</span>
@@ -340,7 +343,7 @@ export default function Settings() {
                   </button>
                 </div>
 
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--bg-base)', padding: '1rem', borderRadius: '8px', border: '1px solid var(--border-color)', marginBottom: '1.5rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--surface-elevated)', padding: 'var(--space-4)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', marginBottom: 'var(--space-4)' }}>
                   <div>
                     <strong style={{ display: 'block', marginBottom: '0.2rem' }}>نسخة احتياطية شاملة (JSON)</strong>
                     <span style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>حفظ كامل بيانات النظام للاسترجاع الآمن</span>
@@ -351,21 +354,21 @@ export default function Settings() {
                   </button>
                 </div>
 
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                  <strong style={{ display: 'block', marginBottom: '0.5rem' }}>النسخ المتوفرة ({backups.length}/30):</strong>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+                  <strong style={{ display: 'block', marginBottom: 'var(--space-2)' }}>النسخ المتوفرة ({backups.length}/30):</strong>
                   {backups.length === 0 ? (
-                    <div style={{ padding: '1rem', textAlign: 'center', color: 'var(--text-muted)', background: 'var(--bg-base)', borderRadius: '8px' }}>لا توجد نسخ احتياطية مسجلة</div>
+                    <div style={{ padding: 'var(--space-4)', textAlign: 'center', color: 'var(--text-muted)', background: 'var(--surface-elevated)', borderRadius: 'var(--radius-sm)' }}>لا توجد نسخ احتياطية مسجلة</div>
                   ) : (
                     backups.map(b => (
-                      <div key={b.filename} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--bg-base)', padding: '1rem', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                      <div key={b.filename} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--surface-elevated)', padding: 'var(--space-4)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }}>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
                           <strong>{new Date(b.created_at).toLocaleString('ar-EG')}</strong>
                           <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
                             {b.size_kb} KB | {b.operations_count} عملية | {b.months_count} شهر | {b.technicians_count} فني
                           </span>
                         </div>
-                        <button className="btn btn-icon" onClick={() => handleRestore(b.filename)} title="استعادة هذه النسخة" disabled={isProcessing}>
-                          <RotateCcw size={18} />
+                        <button className="btn btn-secondary" style={{ color: 'var(--warning)' }} onClick={() => handleRestore(b.filename)} title="استعادة هذه النسخة" disabled={isProcessing}>
+                          <RotateCcw size={18} /> استعادة
                         </button>
                       </div>
                     ))
@@ -374,18 +377,18 @@ export default function Settings() {
               </div>
 
               {/* Danger Zone */}
-              <div className="stat-card fade-in" style={{ padding: '2rem', border: '1px solid var(--danger-bg)' }}>
-                <h3 style={{ marginBottom: '1.5rem', color: 'var(--danger)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <div className="stat-card fade-in" style={{ padding: 'var(--space-6)', border: '1px solid var(--danger-bg)' }}>
+                <h3 style={{ marginBottom: 'var(--space-4)', color: 'var(--danger)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                   <AlertTriangle size={20} /> منطقة الخطر (Danger Zone)
                 </h3>
                 
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--danger-bg)', padding: '1rem', borderRadius: '8px', border: '1px solid rgba(239, 68, 68, 0.3)' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--danger-bg)', padding: 'var(--space-4)', borderRadius: 'var(--radius-sm)', border: '1px solid rgba(239, 68, 68, 0.3)' }}>
                     <div>
                       <strong style={{ display: 'block', marginBottom: '0.2rem', color: 'var(--danger)' }}>تصفير النظام بالكامل</strong>
                       <span style={{ fontSize: '0.9rem', color: 'var(--danger)' }}>مسح جميع البيانات الحالية وإعادتها للوضع الافتراضي. سيتم إنشاء نسخة احتياطية أولاً.</span>
                     </div>
-                    <button className="btn btn-primary" style={{ background: 'var(--danger)', borderColor: 'var(--danger)' }} onClick={handleFactoryReset} disabled={isProcessing}>
+                    <button className="btn btn-danger" onClick={handleFactoryReset} disabled={isProcessing}>
                       <AlertTriangle size={20} />
                       تصفير البرنامج بالكامل
                     </button>
@@ -399,4 +402,5 @@ export default function Settings() {
     </div>
   );
 }
+
 

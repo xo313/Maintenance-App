@@ -3,6 +3,8 @@ import * as xlsx from 'xlsx';
 import { Edit, Trash2, PlusCircle, PenTool, CheckCircle2, ChevronRight, ChevronLeft, MessageCircle } from "lucide-react";
 import type { Operation, Technician } from "../types";
 import { useDialog } from "./ui/DialogProvider";
+import { StatusBadge } from "./ui/Badge";
+import { FileUp } from "lucide-react";
 
 export default function Operations() {
   const [operations, setOperations] = useState<Operation[]>([]);
@@ -417,13 +419,13 @@ export default function Operations() {
             </select>
           </div>
 
-          <div style={{ gridColumn: '1 / -1' }}>
+          <div style={{ gridColumn: '1 / -1', marginTop: 'var(--space-2)' }}>
             {technicians.length === 0 ? (
-              <div style={{ padding: '1rem', background: 'var(--danger-bg)', color: 'var(--danger)', borderRadius: '8px', textAlign: 'center', marginBottom: '1rem' }}>
+              <div style={{ padding: 'var(--space-4)', background: 'var(--danger-bg)', color: 'var(--danger)', borderRadius: 'var(--radius-sm)', textAlign: 'center', marginBottom: 'var(--space-4)' }}>
                 ⚠️ لا يمكنك تسجيل عملية صيانة قبل إضافة "فني" واحد على الأقل من صفحة الإعدادات.
               </div>
             ) : null}
-            <button type="submit" className="btn btn-primary" style={{ width: '100%', height: '48px' }} disabled={technicians.length === 0}>
+            <button type="submit" className="btn btn-primary" style={{ width: '100%', height: '48px', fontSize: '1.1rem' }} disabled={technicians.length === 0}>
               حفظ العملية
             </button>
           </div>
@@ -601,18 +603,18 @@ export default function Operations() {
                 <td style={{ color: 'var(--success)' }}>{op.shop_profit.toFixed(2)}</td>
                 <td style={{ textAlign: 'center' }}>
                   {op.payment_status === 'debt' ? (
-                    <span className="badge badge-debt">دين (آجل)</span>
+                    <StatusBadge status="دين" />
                   ) : (
-                    <span className="badge badge-cash">نقدي</span>
+                    <StatusBadge status="مسدد" />
                   )}
                 </td>
                 <td style={{ textAlign: 'center' }}>
                   {op.status === 'under_maintenance' ? (
-                    <span className="badge" style={{ background: 'var(--warning-bg)', color: 'var(--warning)', borderColor: 'var(--warning)' }}>تحت الصيانة</span>
+                    <StatusBadge status="قيد الصيانة" />
                   ) : op.status === 'completed' ? (
-                    <span className="badge" style={{ background: 'rgba(59, 130, 246, 0.1)', color: '#3b82f6', borderColor: '#3b82f6' }}>مكتمل</span>
+                    <StatusBadge status="مكتمل" />
                   ) : (
-                    <span className="badge" style={{ background: 'var(--success-bg)', color: 'var(--success)', borderColor: 'var(--success)' }}>تم تسليمه</span>
+                    <StatusBadge status="تم التسليم" />
                   )}
                 </td>
                 <td>
