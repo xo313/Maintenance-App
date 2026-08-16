@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import * as xlsx from 'xlsx';
 import { db, initDB } from './database.js';
 import type { Operation, Withdrawal, Technician } from '../src/types';
-import { createBackup, listBackups, readBackup } from './backup.js';
+import { createBackup, listBackups, readBackup, getCanonicalDatabaseHash } from './backup.js';
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -888,13 +888,18 @@ function setupIPC() {
 
   ipcMain.handle('backup:restore', (_, filename) => {
     try {
+      const originalHash = getCanonicalDatabaseHash(db.data);
+      
       // 1. Read and validate
-      let restoredData: any;
+      let restoreResult: { data: any, fileHash?: string };
       try {
-        restoredData = readBackup(filename);
+        restoreResult = readBackup(filename);
       } catch (err: any) {
         return { success: false, reason: err.message, message: 'الملف غير صالح أو معطوب.' };
       }
+
+      const restoredData = restoreResult.data;
+      const expectedHash = getCanonicalDatabaseHash(restoredData);
 
       // 2. Backup current DB
       const preRestoreBackup = createBackup(db.data, true);
@@ -909,28 +914,38 @@ function setupIPC() {
       const saveSuccess = db.save();
       if (!saveSuccess) {
         db.load(); // Re-sync memory from original file on disk
+        const rollbackHash = getCanonicalDatabaseHash(db.data);
+        if (rollbackHash !== originalHash) {
+          return { success: false, reason: 'RESTORE_ROLLBACK_SAVE_FAILED', message: 'CRITICAL RECOVERY ERROR' };
+        }
         return { success: false, reason: 'DATABASE_SAVE_FAILED', message: 'فشل حفظ قاعدة البيانات إلى القرص.' };
       }
 
       // 5. Verify Restore
       db.load();
+      const actualHash = getCanonicalDatabaseHash(db.data);
       const opsMatch = db.data.operations?.length === restoredData.operations?.length;
       const monthsMatch = db.data.months?.length === restoredData.months?.length;
       const techsMatch = db.data.technicians?.length === restoredData.technicians?.length;
       const withsMatch = db.data.withdrawals?.length === restoredData.withdrawals?.length;
 
-      if (!opsMatch || !monthsMatch || !techsMatch || !withsMatch) {
+      if (actualHash !== expectedHash || !opsMatch || !monthsMatch || !techsMatch || !withsMatch) {
         // ROLLBACK
         try {
           const rollbackFilename = path.basename(preRestoreBackup.filename!);
-          const rollbackData = readBackup(rollbackFilename);
+          const rollbackData = readBackup(rollbackFilename).data;
           db.data = rollbackData;
-          db.save();
+          const rbSave = db.save();
           db.load();
+          const rollbackHash = getCanonicalDatabaseHash(db.data);
+          
+          if (!rbSave || rollbackHash !== originalHash) {
+            return { success: false, reason: 'RESTORE_ROLLBACK_FAILED', message: 'CRITICAL RECOVERY ERROR' };
+          }
         } catch (e) {
-          return { success: false, reason: 'RESTORE_ROLLBACK_FAILED', message: 'فشل التحقق من الاستعادة وفشل التراجع.' };
+          return { success: false, reason: 'RESTORE_ROLLBACK_FAILED', message: 'CRITICAL RECOVERY ERROR' };
         }
-        return { success: false, reason: 'RESTORE_VERIFY_FAILED', message: 'فشلت عملية الاستعادة. لم يتم تغيير البيانات الحالية.' };
+        return { success: false, reason: 'RESTORE_VERIFY_FAILED', message: 'فشلت عملية الاستعادة. تم التراجع بنجاح.' };
       }
 
       return { success: true };
@@ -941,6 +956,8 @@ function setupIPC() {
   });
 
   ipcMain.handle('factory-reset', () => {
+    const originalHash = getCanonicalDatabaseHash(db.data);
+    
     // 1. Mandatory Full JSON Backup before wipe
     const backupResult = createBackup(db.data, true);
     if (!backupResult.success) {
@@ -970,11 +987,18 @@ function setupIPC() {
       // Rollback
       try {
         const rollbackFilename = path.basename(backupResult.filename!);
-        const rollbackData = readBackup(rollbackFilename);
+        const rollbackData = readBackup(rollbackFilename).data;
         db.data = rollbackData;
         db.save();
         db.load();
-      } catch (e) {}
+        
+        const rollbackHash = getCanonicalDatabaseHash(db.data);
+        if (rollbackHash !== originalHash) {
+           return { success: false, reason: 'FACTORY_RESET_ROLLBACK_FAILED', message: 'CRITICAL RECOVERY ERROR' };
+        }
+      } catch (e) {
+        return { success: false, reason: 'FACTORY_RESET_ROLLBACK_FAILED', message: 'CRITICAL RECOVERY ERROR' };
+      }
       return { success: false, reason: 'FACTORY_RESET_FAILED', message: 'فشل التصفير أثناء الحفظ. تم الاحتفاظ بالبيانات.' };
     }
 
@@ -984,11 +1008,18 @@ function setupIPC() {
       // Rollback
       try {
         const rollbackFilename = path.basename(backupResult.filename!);
-        const rollbackData = readBackup(rollbackFilename);
+        const rollbackData = readBackup(rollbackFilename).data;
         db.data = rollbackData;
         db.save();
         db.load();
-      } catch (e) {}
+        
+        const rollbackHash = getCanonicalDatabaseHash(db.data);
+        if (rollbackHash !== originalHash) {
+           return { success: false, reason: 'FACTORY_RESET_ROLLBACK_FAILED', message: 'CRITICAL RECOVERY ERROR' };
+        }
+      } catch (e) {
+        return { success: false, reason: 'FACTORY_RESET_ROLLBACK_FAILED', message: 'CRITICAL RECOVERY ERROR' };
+      }
       return { success: false, reason: 'FACTORY_RESET_FAILED', message: 'فشل التحقق من التصفير. تم التراجع.' };
     }
 

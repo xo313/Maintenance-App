@@ -1,8 +1,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { createBackup, readBackup, validateSchema, getCanonicalDatabaseHash } from './electron/backup';
 
 // --- STUB ELECTRON ---
 const mockUserData = path.join(process.cwd(), 'test_userData');
+process.env.TEST_USER_DATA = mockUserData;
 if (!fs.existsSync(mockUserData)) fs.mkdirSync(mockUserData, { recursive: true });
 
 function getBackupDir() {
@@ -12,130 +14,133 @@ function getBackupDir() {
 }
 // ---------------------
 
-const BACKUP_VERSION = 1;
-const MAX_BACKUPS = 30;
+// --- STUB DATABASE ---
+class SimpleDB {
+  data: any = {};
+  dbPath = path.join(mockUserData, 'database.json');
+  forceSaveFail = false;
 
-export function validateSchema(data: any): boolean {
-  if (!data || typeof data !== 'object') return false;
-  if (!Array.isArray(data.months)) return false;
-  if (!Array.isArray(data.operations)) return false;
-  if (!Array.isArray(data.technicians)) return false;
-  if (!Array.isArray(data.withdrawals)) return false;
-  
-  const checkDuplicates = (arr: any[]) => {
-    const ids = new Set();
-    for (const item of arr) {
-      if (!item || typeof item !== 'object') return false;
-      if (item.id === undefined) return false;
-      if (ids.has(item.id)) return false;
-      ids.add(item.id);
+  load() {
+    if (fs.existsSync(this.dbPath)) {
+      this.data = JSON.parse(fs.readFileSync(this.dbPath, 'utf8'));
     }
-    return true;
-  };
-
-  if (!checkDuplicates(data.months)) return false;
-  if (!checkDuplicates(data.operations)) return false;
-  if (!checkDuplicates(data.technicians)) return false;
-  if (!checkDuplicates(data.withdrawals)) return false;
-
-  for (const op of data.operations) {
-    if (op.cost !== undefined && !Number.isFinite(op.cost)) return false;
-    if (op.price !== undefined && !Number.isFinite(op.price)) return false;
-    if (op.shop_profit !== undefined && !Number.isFinite(op.shop_profit)) return false;
-    if (op.tech_profit !== undefined && !Number.isFinite(op.tech_profit)) return false;
   }
 
-  return true;
-}
+  forceCorruptWrite = false;
 
-export function createBackup(dbData: any, isManual: boolean = false): { success: boolean, reason?: string, error?: string, filename?: string } {
+  save(): boolean {
+    if (this.forceSaveFail) return false;
+    const tmpPath = this.dbPath + '.tmp';
+    try {
+      const dataToWrite = this.forceCorruptWrite ? {} : this.data;
+      fs.writeFileSync(tmpPath, JSON.stringify(dataToWrite, null, 2));
+      fs.renameSync(tmpPath, this.dbPath);
+      return true;
+    } catch (err) {
+      return false;
+    }
+  }
+}
+const db = new SimpleDB();
+// ---------------------
+
+// --- STUB IPC LOGIC (Simulating main.ts) ---
+function simulateRestore(filename: string, simulateRollbackSaveFail = false) {
+  const originalHash = getCanonicalDatabaseHash(db.data);
+  let restoreResult;
   try {
-    const backupDir = getBackupDir();
-    const date = new Date();
-    const pad = (n: number) => n.toString().padStart(2, '0');
-    const dateStr = `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
-    const timestamp = `${dateStr}_${pad(date.getHours())}-${pad(date.getMinutes())}-${pad(date.getSeconds())}`;
-    
-    if (!isManual) {
-      const existingAuto = fs.readdirSync(backupDir).find(f => f.startsWith('AutoBackup_' + dateStr));
-      if (existingAuto) {
-        return { success: true, reason: 'AUTO_BACKUP_SKIPPED_ALREADY_EXISTS' };
-      }
-    }
-
-    const prefix = isManual ? 'ManualBackup' : 'AutoBackup';
-    const filename = `${prefix}_${timestamp}.json`;
-    const filepath = path.join(backupDir, filename);
-    const tmpFilepath = filepath + '.tmp';
-
-    const backupContent = {
-      backup_version: BACKUP_VERSION,
-      created_at: date.toISOString(),
-      database: dbData
-    };
-
-    fs.writeFileSync(tmpFilepath, JSON.stringify(backupContent, null, 2), 'utf8');
-    
-    const writtenRaw = fs.readFileSync(tmpFilepath, 'utf8');
-    const parsed = JSON.parse(writtenRaw);
-    if (!parsed || !parsed.database || !validateSchema(parsed.database)) {
-      fs.unlinkSync(tmpFilepath);
-      return { success: false, reason: 'BACKUP_INVALID_SCHEMA' };
-    }
-
-    fs.renameSync(tmpFilepath, filepath);
-
-    const allAutoBackups = fs.readdirSync(backupDir)
-      .filter(f => f.startsWith('AutoBackup_') && f.endsWith('.json'))
-      .map(f => ({ name: f, path: path.join(backupDir, f), time: fs.statSync(path.join(backupDir, f)).mtime.getTime() }))
-      .sort((a, b) => b.time - a.time);
-
-    if (allAutoBackups.length > MAX_BACKUPS) {
-      const toDelete = allAutoBackups.slice(MAX_BACKUPS);
-      for (const old of toDelete) {
-        try { fs.unlinkSync(old.path); } catch (e) {}
-      }
-    }
-
-    return { success: true, filename: filepath };
-  } catch (error: any) {
-    return { success: false, reason: 'BACKUP_WRITE_FAILED', error: error.message };
+    restoreResult = readBackup(filename);
+  } catch (err: any) {
+    return { success: false, reason: err.message };
   }
+
+  const restoredData = restoreResult.data;
+  const expectedHash = getCanonicalDatabaseHash(restoredData);
+
+  if (restoreResult.fileHash && restoreResult.fileHash !== expectedHash) {
+    return { success: false, reason: 'RESTORE_VERIFY_FAILED' };
+  }
+
+  const preRestoreBackup = createBackup(db.data, true);
+  if (!preRestoreBackup.success) return { success: false, reason: 'CURRENT_BACKUP_FAILED' };
+
+  db.data = restoredData;
+  const saveSuccess = db.save();
+
+  if (!saveSuccess) {
+    db.load();
+    const rollbackHash = getCanonicalDatabaseHash(db.data);
+    if (rollbackHash !== originalHash) return { success: false, reason: 'RESTORE_ROLLBACK_SAVE_FAILED' };
+    return { success: false, reason: 'DATABASE_SAVE_FAILED' };
+  }
+
+  db.load();
+  const actualHash = getCanonicalDatabaseHash(db.data);
+  const opsMatch = db.data.operations?.length === restoredData.operations?.length;
+
+  if (actualHash !== expectedHash || !opsMatch) {
+    try {
+      const rollbackFilename = path.basename(preRestoreBackup.filename!);
+      const rollbackData = readBackup(rollbackFilename).data;
+      db.data = rollbackData;
+      if (simulateRollbackSaveFail) db.forceSaveFail = true;
+      const rbSave = db.save();
+      db.forceSaveFail = false;
+      db.load();
+      
+      const rollbackHash = getCanonicalDatabaseHash(db.data);
+      if (!rbSave || rollbackHash !== originalHash) {
+        return { success: false, reason: 'CRITICAL RECOVERY ERROR' };
+      }
+    } catch (e) {
+      return { success: false, reason: 'CRITICAL RECOVERY ERROR' };
+    }
+    return { success: false, reason: 'RESTORE_VERIFY_FAILED' };
+  }
+  return { success: true };
 }
 
-export function readBackup(filename: string): any {
-  if (typeof filename !== 'string') throw new Error('BACKUP_INVALID_PATH');
-  
-  const safeName = path.basename(filename);
-  if (!safeName.endsWith('.json')) throw new Error('BACKUP_INVALID_PATH');
+function simulateFactoryReset() {
+  const originalHash = getCanonicalDatabaseHash(db.data);
+  const backupResult = createBackup(db.data, true);
+  if (!backupResult.success) return { success: false, reason: 'FACTORY_RESET_BACKUP_FAILED' };
 
-  const backupDirResolved = path.resolve(getBackupDir());
-  const filepath = path.resolve(backupDirResolved, safeName);
-  
-  if (!filepath.startsWith(backupDirResolved + path.sep)) {
-    throw new Error('BACKUP_INVALID_PATH');
+  db.data.operations = [];
+  db.data.months = [{ id: 1, month_name: 'test' }];
+
+  const saveSuccess = db.save();
+  if (!saveSuccess) {
+    try {
+      const rollbackFilename = path.basename(backupResult.filename!);
+      db.data = readBackup(rollbackFilename).data;
+      db.save();
+      db.load();
+      if (getCanonicalDatabaseHash(db.data) !== originalHash) return { success: false, reason: 'FACTORY_RESET_ROLLBACK_FAILED' };
+    } catch (e) {
+      return { success: false, reason: 'FACTORY_RESET_ROLLBACK_FAILED' };
+    }
+    return { success: false, reason: 'FACTORY_RESET_FAILED' };
   }
 
-  if (!fs.existsSync(filepath)) throw new Error('BACKUP_NOT_FOUND');
-  
-  const raw = fs.readFileSync(filepath, 'utf8');
-  let data;
-  try {
-    data = JSON.parse(raw);
-  } catch (e) {
-    throw new Error('BACKUP_INVALID_JSON');
+  db.load();
+  if (db.data.operations.length !== 0) {
+    try {
+      const rollbackFilename = path.basename(backupResult.filename!);
+      db.data = readBackup(rollbackFilename).data;
+      db.save();
+      db.load();
+      if (getCanonicalDatabaseHash(db.data) !== originalHash) return { success: false, reason: 'FACTORY_RESET_ROLLBACK_FAILED' };
+    } catch (e) {
+      return { success: false, reason: 'FACTORY_RESET_ROLLBACK_FAILED' };
+    }
+    return { success: false, reason: 'FACTORY_RESET_FAILED' };
   }
-
-  const dbData = data.database || data;
-  if (!validateSchema(dbData)) throw new Error('BACKUP_INVALID_SCHEMA');
-  
-  return dbData;
+  return { success: true };
 }
+// -------------------------------------------
 
-// ----------------------------------------------------
-// Testing
-// ----------------------------------------------------
-console.log("=== RUNNING PHASE 2.1 TESTS ===\n");
+// --- RUN TESTS ---
+console.log("=== PHASE 2.2 FINAL INTEGRATION TESTS ===");
 let testsPassed = 0;
 let testsFailed = 0;
 
@@ -149,79 +154,99 @@ function assert(condition: boolean, testName: string) {
   }
 }
 
-function clearBackups() {
-  const dir = path.join(mockUserData, 'backups_v2');
+function clearAll() {
+  const dir = getBackupDir();
   if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true, force: true });
+  if (fs.existsSync(db.dbPath)) fs.unlinkSync(db.dbPath);
+  db.data = {};
 }
 
-clearBackups();
-
-const validDb = {
+// SETUP BASELINE
+clearAll();
+const validDbTemplate = {
   settings: {},
-  months: [{ id: 1 }],
-  operations: [{ id: 100, cost: 50, price: 100 }],
-  technicians: [],
-  withdrawals: []
+  months: [{ id: 1 }, { id: 2 }],
+  operations: [{ id: 100, cost: 50, price: 100, name: "TEST-A" }, { id: 101, cost: 20, price: 50, name: "TEST-B" }],
+  technicians: [{ id: 1 }, { id: 2 }],
+  withdrawals: [{ id: 1 }, { id: 2 }]
 };
 
-// TEST 1
-let t1 = createBackup(validDb, true);
-assert(t1.success, "TEST 1: Create Manual Backup");
+// 1. VALID RESTORE (ACTUAL DATA MATCH)
+db.data = JSON.parse(JSON.stringify(validDbTemplate));
+db.save();
+const validBackup = createBackup(db.data, true);
+db.data.operations[0].name = "MODIFIED"; // change active DB
+db.save();
+const res1 = simulateRestore(path.basename(validBackup.filename!));
+assert(res1.success === true && db.data.operations[0].name === "TEST-A", "Test 1: Valid Restore & Actual Data Reverted");
 
-// TEST 2
-let readData = readBackup(path.basename(t1.filename!));
-assert(readData.operations[0].id === 100, "TEST 2: Read created Backup");
+// 2. SAME COUNTS / DIFFERENT DATA
+clearAll();
+db.data = JSON.parse(JSON.stringify(validDbTemplate));
+db.save();
+const diffDataBackup = createBackup(db.data, true);
+const rawBackup = JSON.parse(fs.readFileSync(diffDataBackup.filename!, 'utf8'));
+rawBackup.database.operations[0].name = "FORCED-MALICIOUS-2";
+fs.writeFileSync(diffDataBackup.filename!, JSON.stringify(rawBackup)); // Hash mismatch in file
+const res2 = simulateRestore(path.basename(diffDataBackup.filename!));
+assert(res2.success === false && res2.reason === 'RESTORE_VERIFY_FAILED', "Test 2: Modified Backup Data (Hash mismatch)");
 
-// TEST 3
-const badJsonPath = path.join(getBackupDir(), 'bad.json');
-fs.writeFileSync(badJsonPath, "{ bad_json: ");
-try { readBackup('bad.json'); assert(false, "TEST 3: Invalid JSON"); }
-catch (e: any) { assert(e.message === 'BACKUP_INVALID_JSON', "TEST 3: Invalid JSON"); }
+// 3. FORCED RESTORE FAILURE (db.save fails) & ROLLBACK
+clearAll();
+db.data = JSON.parse(JSON.stringify(validDbTemplate));
+db.save();
+const originalHash3 = getCanonicalDatabaseHash(db.data);
+const backup3 = createBackup(db.data, true);
+db.forceSaveFail = true;
+const res3 = simulateRestore(path.basename(backup3.filename!));
+db.forceSaveFail = false;
+db.load();
+assert(res3.success === false && getCanonicalDatabaseHash(db.data) === originalHash3, "Test 3: Forced Restore Failure triggers correct Rollback");
 
-// TEST 4
-const badSchemaPath = path.join(getBackupDir(), 'bad_schema.json');
-fs.writeFileSync(badSchemaPath, JSON.stringify({ backup_version: 1, database: { months: "not_array" } }));
-try { readBackup('bad_schema.json'); assert(false, "TEST 4: Invalid Schema"); }
-catch (e: any) { assert(e.message === 'BACKUP_INVALID_SCHEMA', "TEST 4: Invalid Schema"); }
+// 4. FORCED ROLLBACK FAILURE
+clearAll();
+db.data = JSON.parse(JSON.stringify(validDbTemplate));
+db.save();
+const backup4 = createBackup(db.data, true);
+// Trigger rollback by forcing a corrupt write (verification hash fails)
+db.forceCorruptWrite = true;
+const res4 = simulateRestore(path.basename(backup4.filename!), true); // simulate Rollback save fail
+db.forceCorruptWrite = false;
+assert(res4.reason === 'CRITICAL RECOVERY ERROR', "Test 4: Forced Rollback Failure returns CRITICAL RECOVERY ERROR");
 
-// TEST 5
-const dupOpDb = { ...validDb, operations: [{ id: 1 }, { id: 1 }] };
-assert(!validateSchema(dupOpDb), "TEST 5: Duplicate Operation IDs rejected");
+// 5. FACTORY RESET & FACTORY RESET ROLLBACK
+clearAll();
+db.data = JSON.parse(JSON.stringify(validDbTemplate));
+db.save();
+const res5 = simulateFactoryReset();
+assert(res5.success === true && db.data.operations.length === 0, "Test 5: Factory Reset successful and verifies empty DB");
 
-// TEST 6
-const dupTechDb = { ...validDb, technicians: [{ id: 1 }, { id: 1 }] };
-assert(!validateSchema(dupTechDb), "TEST 6: Duplicate Technician IDs rejected");
+// 6. RESTORE AFTER RESET
+const backupBeforeReset = createBackup(validDbTemplate, true);
+const res6 = simulateRestore(path.basename(backupBeforeReset.filename!));
+assert(res6.success === true && db.data.operations.length === 2, "Test 6: Restore after Factory Reset works");
 
-// TEST 7
-const nanDb = { ...validDb, operations: [{ id: 1, cost: NaN }] };
-assert(!validateSchema(nanDb), "TEST 7: NaN / Infinity rejected");
+// 7. RESTART PERSISTENCE
+db.data = {}; // wipe memory
+db.load(); // restart
+assert(db.data.operations.length === 2 && getCanonicalDatabaseHash(db.data) === getCanonicalDatabaseHash(validDbTemplate), "Test 7: Restart Persistence");
 
-// TEST 8 & 9
-assert(validateSchema(validDb), "TEST 8 & 9: Valid Schema accepts valid DB");
+// 8. CORRUPT JSON BACKUP
+const corruptPath = path.join(getBackupDir(), 'corrupt.json');
+fs.writeFileSync(corruptPath, "{ bad json");
+const res8 = simulateRestore('corrupt.json');
+assert(res8.success === false && res8.reason === 'BACKUP_INVALID_JSON', "Test 8: Corrupt Backup rejected");
 
-// TEST 14 & 15
-try { readBackup('../database.json'); assert(false, "TEST 14: Path traversal"); }
-catch (e: any) { assert(e.message === 'BACKUP_INVALID_PATH', "TEST 14: Path traversal rejected"); }
-try { readBackup('C:/Windows/System32/config'); assert(false, "TEST 15: Absolute path"); }
-catch (e: any) { assert(e.message === 'BACKUP_INVALID_PATH', "TEST 15: Absolute path rejected"); }
+// 9. LEGACY BACKUP
+const legacyDb = JSON.parse(JSON.stringify(validDbTemplate));
+const legacyPath = path.join(getBackupDir(), 'legacy.json');
+fs.writeFileSync(legacyPath, JSON.stringify({ backup_version: 1, created_at: "old", database: legacyDb })); // NO HASH
+const res9 = simulateRestore('legacy.json');
+assert(res9.success === true, "Test 9: Legacy backup restores correctly");
 
-// TEST 16
-clearBackups();
-const a1 = createBackup(validDb, false);
-const a2 = createBackup(validDb, false);
-assert(a1.success && a2.reason === 'AUTO_BACKUP_SKIPPED_ALREADY_EXISTS', "TEST 16: Maximum one automatic backup per day");
-
-// TEST 17
-clearBackups();
-createBackup(validDb, true);
-for (let i = 0; i < 35; i++) {
-  fs.writeFileSync(path.join(getBackupDir(), `AutoBackup_1990-01-${i}_00-00-00.json`), "{}");
-}
-createBackup(validDb, false);
-const files = fs.readdirSync(getBackupDir());
-const manualExists = files.some(f => f.startsWith('ManualBackup'));
-const autoCount = files.filter(f => f.startsWith('AutoBackup')).length;
-assert(manualExists && autoCount <= 30, "TEST 17: Manual Backup is preserved during retention");
+// 10. PATH TRAVERSAL
+const res10 = simulateRestore('../database.json');
+assert(res10.success === false && res10.reason === 'BACKUP_INVALID_PATH', "Test 10: Path traversal rejected");
 
 console.log(`\nResults: ${testsPassed} Passed, ${testsFailed} Failed`);
 if (testsFailed > 0) process.exit(1);

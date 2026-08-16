@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { app } from 'electron';
 
 export interface BackupMetadata {
@@ -16,11 +17,35 @@ const BACKUP_VERSION = 1;
 const MAX_BACKUPS = 30;
 
 function getBackupDir() {
-  const dir = path.join(app.getPath('userData'), 'backups_v2');
+  const userDataPath = process.env.TEST_USER_DATA || app.getPath('userData');
+  const dir = path.join(userDataPath, 'backups_v2');
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
   }
   return dir;
+}
+
+export function getCanonicalDatabaseHash(database: any): string {
+  if (!database) return crypto.createHash('sha256').update('', 'utf8').digest('hex');
+  
+  const sortKeys = (obj: any): any => {
+    if (obj === null || typeof obj !== 'object') {
+      return obj;
+    }
+    if (Array.isArray(obj)) {
+      return obj.map(sortKeys);
+    }
+    const sortedObj: any = {};
+    const keys = Object.keys(obj).sort();
+    for (const key of keys) {
+      sortedObj[key] = sortKeys(obj[key]);
+    }
+    return sortedObj;
+  };
+
+  const canonicalDb = sortKeys(database);
+  const jsonStr = JSON.stringify(canonicalDb);
+  return crypto.createHash('sha256').update(jsonStr, 'utf8').digest('hex');
 }
 
 export function validateSchema(data: any): boolean {
@@ -82,6 +107,7 @@ export function createBackup(dbData: any, isManual: boolean = false): { success:
     const backupContent = {
       backup_version: BACKUP_VERSION,
       created_at: date.toISOString(),
+      database_hash: getCanonicalDatabaseHash(dbData),
       database: dbData
     };
 
@@ -154,7 +180,7 @@ export function listBackups(): BackupMetadata[] {
   }
 }
 
-export function readBackup(filename: string): any {
+export function readBackup(filename: string): { data: any, fileHash?: string } {
   if (typeof filename !== 'string') throw new Error('BACKUP_INVALID_PATH');
   if (filename.includes('/') || filename.includes('\\') || filename.includes('..')) {
     throw new Error('BACKUP_INVALID_PATH');
@@ -182,10 +208,11 @@ export function readBackup(filename: string): any {
   }
 
   const dbData = data.database || data; // backward compatibility
+  const fileHash = data.database_hash;
   
   if (!validateSchema(dbData)) {
     throw new Error('BACKUP_INVALID_SCHEMA');
   }
   
-  return dbData;
+  return { data: dbData, fileHash };
 }
