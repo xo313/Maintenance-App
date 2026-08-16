@@ -160,15 +160,16 @@ class SimpleDB {
     }
   }
 
-  save() {
+  save(): boolean {
     const tmpPath = dbPath + '.tmp';
     try {
       fs.writeFileSync(tmpPath, JSON.stringify(this.data, null, 2));
       fs.renameSync(tmpPath, dbPath);
+      return true;
     } catch (err) {
       console.error('Failed to save database atomically', err);
-      // Fallback
-      fs.writeFileSync(dbPath, JSON.stringify(this.data, null, 2));
+      // DO NOT FALLBACK TO DIRECT WRITE IN RECOVERY PHASE!
+      return false;
     }
   }
 

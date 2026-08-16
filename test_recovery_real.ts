@@ -1,27 +1,19 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { app } from 'electron';
 
-export interface BackupMetadata {
-  filename: string;
-  created_at: string;
-  size_kb: number;
-  operations_count: number;
-  months_count: number;
-  technicians_count: number;
-  withdrawals_count: number;
+// --- STUB ELECTRON ---
+const mockUserData = path.join(process.cwd(), 'test_userData');
+if (!fs.existsSync(mockUserData)) fs.mkdirSync(mockUserData, { recursive: true });
+
+function getBackupDir() {
+  const dir = path.join(mockUserData, 'backups_v2');
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  return dir;
 }
+// ---------------------
 
 const BACKUP_VERSION = 1;
 const MAX_BACKUPS = 30;
-
-function getBackupDir() {
-  const dir = path.join(app.getPath('userData'), 'backups_v2');
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
-  }
-  return dir;
-}
 
 export function validateSchema(data: any): boolean {
   if (!data || typeof data !== 'object') return false;
@@ -30,7 +22,6 @@ export function validateSchema(data: any): boolean {
   if (!Array.isArray(data.technicians)) return false;
   if (!Array.isArray(data.withdrawals)) return false;
   
-  // Check duplicates
   const checkDuplicates = (arr: any[]) => {
     const ids = new Set();
     for (const item of arr) {
@@ -47,7 +38,6 @@ export function validateSchema(data: any): boolean {
   if (!checkDuplicates(data.technicians)) return false;
   if (!checkDuplicates(data.withdrawals)) return false;
 
-  // Check finite numbers in operations
   for (const op of data.operations) {
     if (op.cost !== undefined && !Number.isFinite(op.cost)) return false;
     if (op.price !== undefined && !Number.isFinite(op.price)) return false;
@@ -66,7 +56,6 @@ export function createBackup(dbData: any, isManual: boolean = false): { success:
     const dateStr = `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
     const timestamp = `${dateStr}_${pad(date.getHours())}-${pad(date.getMinutes())}-${pad(date.getSeconds())}`;
     
-    // Auto Backup limit: 1 per day
     if (!isManual) {
       const existingAuto = fs.readdirSync(backupDir).find(f => f.startsWith('AutoBackup_' + dateStr));
       if (existingAuto) {
@@ -85,25 +74,21 @@ export function createBackup(dbData: any, isManual: boolean = false): { success:
       database: dbData
     };
 
-    // Atomic write
     fs.writeFileSync(tmpFilepath, JSON.stringify(backupContent, null, 2), 'utf8');
     
-    // Verify readable and valid
     const writtenRaw = fs.readFileSync(tmpFilepath, 'utf8');
     const parsed = JSON.parse(writtenRaw);
     if (!parsed || !parsed.database || !validateSchema(parsed.database)) {
-      fs.unlinkSync(tmpFilepath); // Clean up
+      fs.unlinkSync(tmpFilepath);
       return { success: false, reason: 'BACKUP_INVALID_SCHEMA' };
     }
 
-    // Rename to final
     fs.renameSync(tmpFilepath, filepath);
 
-    // Retention Policy - only delete AutoBackups
     const allAutoBackups = fs.readdirSync(backupDir)
       .filter(f => f.startsWith('AutoBackup_') && f.endsWith('.json'))
       .map(f => ({ name: f, path: path.join(backupDir, f), time: fs.statSync(path.join(backupDir, f)).mtime.getTime() }))
-      .sort((a, b) => b.time - a.time); // newest first
+      .sort((a, b) => b.time - a.time);
 
     if (allAutoBackups.length > MAX_BACKUPS) {
       const toDelete = allAutoBackups.slice(MAX_BACKUPS);
@@ -118,47 +103,8 @@ export function createBackup(dbData: any, isManual: boolean = false): { success:
   }
 }
 
-export function listBackups(): BackupMetadata[] {
-  try {
-    const backupDir = getBackupDir();
-    const files = fs.readdirSync(backupDir).filter(f => f.endsWith('.json'));
-    
-    const results: BackupMetadata[] = [];
-    
-    for (const file of files) {
-      try {
-        const filepath = path.join(backupDir, file);
-        const stats = fs.statSync(filepath);
-        const content = JSON.parse(fs.readFileSync(filepath, 'utf8'));
-        
-        const db = content.database || content; // Handle backward compat if old backup is raw db
-        
-        results.push({
-          filename: file,
-          created_at: content.created_at || stats.mtime.toISOString(),
-          size_kb: Math.round(stats.size / 1024),
-          operations_count: Array.isArray(db.operations) ? db.operations.length : 0,
-          months_count: Array.isArray(db.months) ? db.months.length : 0,
-          technicians_count: Array.isArray(db.technicians) ? db.technicians.length : 0,
-          withdrawals_count: Array.isArray(db.withdrawals) ? db.withdrawals.length : 0,
-        });
-      } catch (e) {
-        // Corrupt file, skip
-      }
-    }
-    
-    // Sort by created_at desc
-    return results.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-  } catch (e) {
-    return [];
-  }
-}
-
 export function readBackup(filename: string): any {
   if (typeof filename !== 'string') throw new Error('BACKUP_INVALID_PATH');
-  if (filename.includes('/') || filename.includes('\\') || filename.includes('..')) {
-    throw new Error('BACKUP_INVALID_PATH');
-  }
   
   const safeName = path.basename(filename);
   if (!safeName.endsWith('.json')) throw new Error('BACKUP_INVALID_PATH');
@@ -166,7 +112,6 @@ export function readBackup(filename: string): any {
   const backupDirResolved = path.resolve(getBackupDir());
   const filepath = path.resolve(backupDirResolved, safeName);
   
-  // Anti-traversal check
   if (!filepath.startsWith(backupDirResolved + path.sep)) {
     throw new Error('BACKUP_INVALID_PATH');
   }
@@ -181,11 +126,102 @@ export function readBackup(filename: string): any {
     throw new Error('BACKUP_INVALID_JSON');
   }
 
-  const dbData = data.database || data; // backward compatibility
-  
-  if (!validateSchema(dbData)) {
-    throw new Error('BACKUP_INVALID_SCHEMA');
-  }
+  const dbData = data.database || data;
+  if (!validateSchema(dbData)) throw new Error('BACKUP_INVALID_SCHEMA');
   
   return dbData;
 }
+
+// ----------------------------------------------------
+// Testing
+// ----------------------------------------------------
+console.log("=== RUNNING PHASE 2.1 TESTS ===\n");
+let testsPassed = 0;
+let testsFailed = 0;
+
+function assert(condition: boolean, testName: string) {
+  if (condition) {
+    console.log(`[PASS] ${testName}`);
+    testsPassed++;
+  } else {
+    console.log(`[FAIL] ${testName}`);
+    testsFailed++;
+  }
+}
+
+function clearBackups() {
+  const dir = path.join(mockUserData, 'backups_v2');
+  if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true, force: true });
+}
+
+clearBackups();
+
+const validDb = {
+  settings: {},
+  months: [{ id: 1 }],
+  operations: [{ id: 100, cost: 50, price: 100 }],
+  technicians: [],
+  withdrawals: []
+};
+
+// TEST 1
+let t1 = createBackup(validDb, true);
+assert(t1.success, "TEST 1: Create Manual Backup");
+
+// TEST 2
+let readData = readBackup(path.basename(t1.filename!));
+assert(readData.operations[0].id === 100, "TEST 2: Read created Backup");
+
+// TEST 3
+const badJsonPath = path.join(getBackupDir(), 'bad.json');
+fs.writeFileSync(badJsonPath, "{ bad_json: ");
+try { readBackup('bad.json'); assert(false, "TEST 3: Invalid JSON"); }
+catch (e: any) { assert(e.message === 'BACKUP_INVALID_JSON', "TEST 3: Invalid JSON"); }
+
+// TEST 4
+const badSchemaPath = path.join(getBackupDir(), 'bad_schema.json');
+fs.writeFileSync(badSchemaPath, JSON.stringify({ backup_version: 1, database: { months: "not_array" } }));
+try { readBackup('bad_schema.json'); assert(false, "TEST 4: Invalid Schema"); }
+catch (e: any) { assert(e.message === 'BACKUP_INVALID_SCHEMA', "TEST 4: Invalid Schema"); }
+
+// TEST 5
+const dupOpDb = { ...validDb, operations: [{ id: 1 }, { id: 1 }] };
+assert(!validateSchema(dupOpDb), "TEST 5: Duplicate Operation IDs rejected");
+
+// TEST 6
+const dupTechDb = { ...validDb, technicians: [{ id: 1 }, { id: 1 }] };
+assert(!validateSchema(dupTechDb), "TEST 6: Duplicate Technician IDs rejected");
+
+// TEST 7
+const nanDb = { ...validDb, operations: [{ id: 1, cost: NaN }] };
+assert(!validateSchema(nanDb), "TEST 7: NaN / Infinity rejected");
+
+// TEST 8 & 9
+assert(validateSchema(validDb), "TEST 8 & 9: Valid Schema accepts valid DB");
+
+// TEST 14 & 15
+try { readBackup('../database.json'); assert(false, "TEST 14: Path traversal"); }
+catch (e: any) { assert(e.message === 'BACKUP_INVALID_PATH', "TEST 14: Path traversal rejected"); }
+try { readBackup('C:/Windows/System32/config'); assert(false, "TEST 15: Absolute path"); }
+catch (e: any) { assert(e.message === 'BACKUP_INVALID_PATH', "TEST 15: Absolute path rejected"); }
+
+// TEST 16
+clearBackups();
+const a1 = createBackup(validDb, false);
+const a2 = createBackup(validDb, false);
+assert(a1.success && a2.reason === 'AUTO_BACKUP_SKIPPED_ALREADY_EXISTS', "TEST 16: Maximum one automatic backup per day");
+
+// TEST 17
+clearBackups();
+createBackup(validDb, true);
+for (let i = 0; i < 35; i++) {
+  fs.writeFileSync(path.join(getBackupDir(), `AutoBackup_1990-01-${i}_00-00-00.json`), "{}");
+}
+createBackup(validDb, false);
+const files = fs.readdirSync(getBackupDir());
+const manualExists = files.some(f => f.startsWith('ManualBackup'));
+const autoCount = files.filter(f => f.startsWith('AutoBackup')).length;
+assert(manualExists && autoCount <= 30, "TEST 17: Manual Backup is preserved during retention");
+
+console.log(`\nResults: ${testsPassed} Passed, ${testsFailed} Failed`);
+if (testsFailed > 0) process.exit(1);

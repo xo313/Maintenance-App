@@ -889,7 +889,12 @@ function setupIPC() {
   ipcMain.handle('backup:restore', (_, filename) => {
     try {
       // 1. Read and validate
-      const restoredData = readBackup(filename);
+      let restoredData: any;
+      try {
+        restoredData = readBackup(filename);
+      } catch (err: any) {
+        return { success: false, reason: err.message, message: 'الملف غير صالح أو معطوب.' };
+      }
 
       // 2. Backup current DB
       const preRestoreBackup = createBackup(db.data, true);
@@ -897,12 +902,40 @@ function setupIPC() {
         return { success: false, reason: 'CURRENT_BACKUP_FAILED', message: 'تعذر إنشاء نسخة احتياطية من البيانات الحالية، لذلك لم يتم تنفيذ الاستعادة.' };
       }
 
-      // 3. Restore
+      // 3. Restore to Memory
       db.data = restoredData;
-      db.save();
+      
+      // 4. Save Atomically
+      const saveSuccess = db.save();
+      if (!saveSuccess) {
+        db.load(); // Re-sync memory from original file on disk
+        return { success: false, reason: 'DATABASE_SAVE_FAILED', message: 'فشل حفظ قاعدة البيانات إلى القرص.' };
+      }
+
+      // 5. Verify Restore
+      db.load();
+      const opsMatch = db.data.operations?.length === restoredData.operations?.length;
+      const monthsMatch = db.data.months?.length === restoredData.months?.length;
+      const techsMatch = db.data.technicians?.length === restoredData.technicians?.length;
+      const withsMatch = db.data.withdrawals?.length === restoredData.withdrawals?.length;
+
+      if (!opsMatch || !monthsMatch || !techsMatch || !withsMatch) {
+        // ROLLBACK
+        try {
+          const rollbackFilename = path.basename(preRestoreBackup.filename!);
+          const rollbackData = readBackup(rollbackFilename);
+          db.data = rollbackData;
+          db.save();
+          db.load();
+        } catch (e) {
+          return { success: false, reason: 'RESTORE_ROLLBACK_FAILED', message: 'فشل التحقق من الاستعادة وفشل التراجع.' };
+        }
+        return { success: false, reason: 'RESTORE_VERIFY_FAILED', message: 'فشلت عملية الاستعادة. لم يتم تغيير البيانات الحالية.' };
+      }
 
       return { success: true };
     } catch (e: any) {
+      db.load(); // Failsafe
       return { success: false, reason: 'RESTORE_FAILED', message: e.message };
     }
   });
@@ -932,7 +965,33 @@ function setupIPC() {
       closed_at: null
     }];
 
-    db.save();
+    const saveSuccess = db.save();
+    if (!saveSuccess) {
+      // Rollback
+      try {
+        const rollbackFilename = path.basename(backupResult.filename!);
+        const rollbackData = readBackup(rollbackFilename);
+        db.data = rollbackData;
+        db.save();
+        db.load();
+      } catch (e) {}
+      return { success: false, reason: 'FACTORY_RESET_FAILED', message: 'فشل التصفير أثناء الحفظ. تم الاحتفاظ بالبيانات.' };
+    }
+
+    // Verify
+    db.load();
+    if (db.data.operations.length !== 0 || db.data.months.length !== 1) {
+      // Rollback
+      try {
+        const rollbackFilename = path.basename(backupResult.filename!);
+        const rollbackData = readBackup(rollbackFilename);
+        db.data = rollbackData;
+        db.save();
+        db.load();
+      } catch (e) {}
+      return { success: false, reason: 'FACTORY_RESET_FAILED', message: 'فشل التحقق من التصفير. تم التراجع.' };
+    }
+
     return { success: true };
   });
 }

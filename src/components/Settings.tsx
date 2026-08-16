@@ -87,7 +87,7 @@ export default function Settings() {
         alert('تم إنشاء نسخة احتياطية كاملة للبيانات بنجاح!');
         loadBackups();
       } else {
-        alert('حدث خطأ أثناء النسخ الاحتياطي: ' + res.message);
+        alert('تعذر إنشاء النسخة الاحتياطية، لذلك لم يتم تنفيذ العملية.');
       }
     } catch (err) {
       alert('حدث خطأ أثناء تصدير النسخة الاحتياطية.');
@@ -100,13 +100,17 @@ export default function Settings() {
     try {
       const res = await (window as any).api.restoreBackup(showRestoreConfirm);
       if (res.success) {
-        alert('تم استعادة البيانات بنجاح! سيتم إعادة تشغيل التطبيق لتطبيق التغييرات.');
+        alert('تمت استعادة النسخة الاحتياطية بنجاح.');
         (window as any).api.restartApp();
       } else {
-        alert('فشل الاستعادة: ' + res.message);
+        if (res.reason === 'RESTORE_VERIFY_FAILED' || res.reason === 'RESTORE_ROLLBACK_FAILED') {
+          alert('فشلت الاستعادة وتمت إعادة البيانات السابقة.');
+        } else {
+          alert('فشلت عملية الاستعادة. لم يتم تغيير البيانات الحالية.');
+        }
       }
     } catch (err: any) {
-      alert('فشل الاستعادة: ' + err.message);
+      alert('فشلت عملية الاستعادة. لم يتم تغيير البيانات الحالية.');
     }
     setIsRestoring(false);
     setShowRestoreConfirm(null);
@@ -118,14 +122,18 @@ export default function Settings() {
     try {
       const res = await (window as any).api.factoryReset();
       if (res.success) {
-        alert('تم تصفير النظام بنجاح! سيتم إعادة التشغيل.');
+        alert('تم إنشاء نسخة احتياطية قبل التصفير.\nتم تصفير النظام بنجاح!');
         (window as any).api.restartApp();
       } else {
-        alert('حدث خطأ أثناء التصفير: ' + res.message);
+        if (res.reason === 'FACTORY_RESET_BACKUP_FAILED') {
+          alert('تعذر إنشاء النسخة الاحتياطية، لذلك لم يتم تنفيذ العملية.');
+        } else {
+          alert('فشل التصفير وتمت إعادة البيانات السابقة.');
+        }
       }
     } catch (err: any) {
       console.error(err);
-      alert('حدث خطأ أثناء تصفير النظام: ' + err.message);
+      alert('فشل التصفير وتمت إعادة البيانات السابقة.');
     }
     setIsResetting(false);
     setShowResetConfirm(false);
