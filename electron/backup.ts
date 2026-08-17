@@ -114,8 +114,8 @@ export function validateSchema(data: any): boolean {
         !hasValidOptionalNumber(op, 'paid_in_month_id') ||
         !hasValidOptionalNullableString(op, 'paid_at')) return false;
     if (op.faults !== undefined && (!Array.isArray(op.faults) || op.faults.some((fault: any) => typeof fault !== 'string'))) return false;
-    if (op.payment_status !== undefined && !['cash', 'debt'].includes(op.payment_status)) return false;
-    if (op.status !== undefined && !['under_maintenance', 'completed', 'delivered'].includes(op.status)) return false;
+    if (op.payment_status !== undefined && !['cash', 'debt', 'partial'].includes(op.payment_status)) return false;
+    if (op.status !== undefined && !['under_maintenance', 'completed', 'delivered', 'cancelled'].includes(op.status)) return false;
   }
 
   for (const withdrawal of data.withdrawals) {
