@@ -42,6 +42,7 @@ export interface Operation {
   faults?: string[];
   cost: number;
   price: number;
+  tech_profit_percentage?: number;
   technician_id: number;
   technician_name?: string;
   shop_profit: number;

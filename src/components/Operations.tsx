@@ -80,10 +80,6 @@ export default function Operations() {
     const p = parseFloat(cost || '0');
 
     const executeSubmit = async () => {
-      const net_profit = s - p;
-      const tech_profit = Number((net_profit * selectedTech.profit_percentage).toFixed(2));
-      const shop_profit = Number((net_profit - tech_profit).toFixed(2));
-
       let finalFaults = [...faults];
       if (faultType.trim() && !finalFaults.includes(faultType.trim())) {
         finalFaults.push(faultType.trim());
@@ -97,8 +93,6 @@ export default function Operations() {
         faults: finalFaults,
         price: s,
         cost: p,
-        shop_profit,
-        tech_profit,
         payment_status: paymentStatus,
         status: status
       });
@@ -181,11 +175,16 @@ export default function Operations() {
     const s = parseFloat(editPrice);
     const p = parseFloat(editCost || '0');
 
-    const executeEdit = async () => {
-      const net_profit = s - p;
-      const tech_profit = Number((net_profit * selectedTech.profit_percentage).toFixed(2));
-      const shop_profit = Number((net_profit - tech_profit).toFixed(2));
+    // WARNING CHECKS
+    let isFinancialEdit = s !== editingOp.price || p !== (editingOp.cost || 0);
+    let isLegacy = editingOp.tech_profit_percentage === undefined;
 
+    if (isFinancialEdit && isLegacy) {
+       const confirmed = await dialog.confirm('هذه عملية قديمة. تعديلها مالياً سيؤدي إلى إعادة حساب الأرباح بناءً على نسبة الفني الحالية. هل تود الاستمرار؟', 'تأكيد التعديل المالي', true);
+       if (!confirmed) return;
+    }
+
+    const executeEdit = async () => {
       let finalEditFaults = [...editFaults];
       if (editFaultType.trim() && !finalEditFaults.includes(editFaultType.trim())) {
         finalEditFaults.push(editFaultType.trim());
@@ -199,8 +198,6 @@ export default function Operations() {
         faults: finalEditFaults,
         price: s,
         cost: p,
-        shop_profit,
-        tech_profit,
         payment_status: editPaymentStatus,
         status: editStatus
       });
@@ -440,8 +437,8 @@ export default function Operations() {
           </h3>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1.5rem', alignItems: 'end' }}>
             <div className="form-group" style={{ marginBottom: 0 }}>
-              <label style={{ color: 'var(--text-main)' }}>الفني</label>
-              <select value={editTechId} onChange={e => setEditTechId(Number(e.target.value))} required>
+              <label style={{ color: 'var(--text-main)' }}>الفني (غير قابل للتعديل)</label>
+              <select value={editTechId} disabled required style={{ opacity: 0.7, cursor: 'not-allowed' }}>
                 {technicians.map(t => (
                   <option key={t.id} value={t.id}>{t.name}</option>
                 ))}

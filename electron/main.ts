@@ -159,6 +159,13 @@ function setupIPC() {
     return { success: false, reason: 'NOT_FOUND' };
   });
 
+  function calculateProfits(price: number, cost: number, techPercentage: number) {
+    const netProfit = Math.max(0, price - cost);
+    const techProfit = Number((netProfit * techPercentage).toFixed(2));
+    const shopProfit = Number((netProfit - techProfit).toFixed(2));
+    return { techProfit, shopProfit };
+  }
+
   // Operations
   ipcMain.handle('get-operations', () => {
     return db.data.operations
@@ -198,12 +205,18 @@ function setupIPC() {
     if (!['cash', 'debt'].includes(op.payment_status)) {
       op.payment_status = 'cash';
     }
+    // Calculate profits backend-side
+    const techPercentage = Number(techExists.profit_percentage) || 0;
+    const { techProfit, shopProfit } = calculateProfits(op.price, op.cost, techPercentage);
     
     const newOp = {
       id: newId,
       date: new Date().toLocaleDateString('en-GB'),
       month_id: getCurrentMonth().id,
-      ...op
+      ...op,
+      tech_profit_percentage: techPercentage,
+      tech_profit: techProfit,
+      shop_profit: shopProfit
     };
     db.data.operations.push(newOp);
     
@@ -252,7 +265,37 @@ function setupIPC() {
       delete updatedOp.paid_in_month_id;
       delete updatedOp.paid_at;
       
-      db.data.operations[idx] = { ...oldOp, ...updatedOp };
+      // Do not trust profit values from frontend
+      delete updatedOp.shop_profit;
+      delete updatedOp.tech_profit;
+      delete updatedOp.tech_profit_percentage;
+
+      if (updatedOp.technician_id !== undefined && updatedOp.technician_id !== oldOp.technician_id) {
+        return { success: false, reason: 'TECHNICIAN_CHANGE_NOT_ALLOWED' };
+      }
+
+      let isFinancialEdit = false;
+
+      if (updatedOp.price !== undefined && updatedOp.price !== oldOp.price) isFinancialEdit = true;
+      if (updatedOp.cost !== undefined && updatedOp.cost !== oldOp.cost) isFinancialEdit = true;
+
+      const mergedOp = { ...oldOp, ...updatedOp };
+
+      if (isFinancialEdit) {
+        let techPercentageToUse = oldOp.tech_profit_percentage;
+
+        if (techPercentageToUse === undefined) {
+           const techExists = db.data.technicians.find((t: any) => t.id === mergedOp.technician_id);
+           techPercentageToUse = Number(techExists?.profit_percentage) || 0;
+           mergedOp.tech_profit_percentage = techPercentageToUse;
+        }
+
+        const { techProfit, shopProfit } = calculateProfits(mergedOp.price, mergedOp.cost, techPercentageToUse);
+        mergedOp.tech_profit = techProfit;
+        mergedOp.shop_profit = shopProfit;
+      }
+
+      db.data.operations[idx] = mergedOp;
       if (!db.save()) {
         db.data.operations[idx] = oldOp;
         db.load();
