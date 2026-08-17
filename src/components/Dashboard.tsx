@@ -1,22 +1,21 @@
 import { useEffect, useState } from 'react';
-import { Wallet, Banknote, TrendingUp, AlertTriangle, FileText, CheckCircle2, Plus, Search, CalendarCheck } from 'lucide-react';
+import { Wallet, Banknote, TrendingUp, AlertTriangle, FileText, CheckCircle2, Plus, Search, CalendarCheck, Users, Wrench, Smartphone, FileBox, Cpu } from 'lucide-react';
 import type { DashboardStats, Operation } from '../types';
 import { useDialog } from './ui/DialogProvider';
 import { StatusBadge } from './ui/Badge';
-
-export default function Dashboard() {
+export default function Dashboard({ onNavigate }: { onNavigate?: (tab: string, filter?: any, mode?: 'list' | 'add') => void }) {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [debts, setDebts] = useState<Operation[]>([]);
-  const [newCapital, setNewCapital] = useState<string>('');
-  const [showSettlementModal, setShowSettlementModal] = useState(false);
-  const [isClosing, setIsClosing] = useState(false);
+  const [operations, setOperations] = useState<Operation[]>([]);
   const dialog = useDialog();
 
   const loadData = async () => {
     const data = await (window as any).api.getDashboardStats();
     const debtsData = await (window as any).api.getDebts();
+    const ops = await (window as any).api.getOperations();
     setStats(data);
     setDebts(debtsData);
+    setOperations(ops);
   };
 
   useEffect(() => {
@@ -35,41 +34,6 @@ export default function Dashboard() {
     loadData();
   };
 
-  const confirmCloseMonth = async () => {
-    if (!newCapital) {
-      await dialog.warning('الرجاء إدخال رأس المال للشهر الجديد قبل التصفية');
-      return;
-    }
-    
-    if (isClosing) return;
-    setIsClosing(true);
-    
-    dialog.loading('جاري التصفية وإنشاء ملف الإكسل والنسخة الاحتياطية...');
-    
-    try {
-      const res = await (window as any).api.closeMonthWithExcel(parseFloat(newCapital));
-      
-      dialog.close();
-      
-      if (res.success) {
-        await dialog.success('تم حفظ النسخة الاحتياطية وتصفية الشهر بنجاح!');
-        setNewCapital('');
-        setShowSettlementModal(false);
-        loadData();
-      } else {
-        if (res.reason === 'cancelled') {
-          await dialog.warning('تم إلغاء عملية التصفية لأنك لم تقم بحفظ ملف النسخة الاحتياطية.');
-        } else {
-          await dialog.error('حدث خطأ أثناء حفظ الملف: ' + res.message);
-        }
-      }
-    } catch (err: any) {
-      dialog.close();
-      await dialog.error('حدث خطأ غير متوقع: ' + err.message);
-    } finally {
-      setIsClosing(false);
-    }
-  };
 
   if (!stats) return (
     <div className="fade-in empty-state">
@@ -143,23 +107,98 @@ export default function Dashboard() {
             {stats.totalWithdrawals.toLocaleString()}
           </div>
           <div className="caption">
-            إجمالي مصروفات المحل والنثريات والفنيين
+            مصروفات المحل وسلف الفنيين خلال الشهر الحالي
+          </div>
+        </div>
+      </div>
+
+      {/* New Reports Section */}
+      <div style={{ marginBottom: 'var(--space-8)' }}>
+        <h2 className="section-title" style={{ marginBottom: 'var(--space-4)' }}>التقرير المالي للشهر الحالي</h2>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 'var(--space-4)' }}>
+          <div className="glass" style={{ padding: 'var(--space-4)', borderRadius: 'var(--radius-md)' }}>
+            <div className="caption" style={{ marginBottom: '4px' }}>إجمالي الأرباح</div>
+            <div style={{ fontSize: '1.25rem', fontWeight: 'bold', color: 'var(--success)' }}>{stats.totalProfit.toLocaleString()}</div>
+          </div>
+          <div className="glass" style={{ padding: 'var(--space-4)', borderRadius: 'var(--radius-md)' }}>
+            <div className="caption" style={{ marginBottom: '4px' }}>أرباح الفنيين</div>
+            <div style={{ fontSize: '1.25rem', fontWeight: 'bold', color: 'var(--info)' }}>{stats.totalTechProfit.toLocaleString()}</div>
+          </div>
+          <div className="glass" style={{ padding: 'var(--space-4)', borderRadius: 'var(--radius-md)' }}>
+            <div className="caption" style={{ marginBottom: '4px' }}>أرباح المحل</div>
+            <div style={{ fontSize: '1.25rem', fontWeight: 'bold', color: 'var(--accent)' }}>{stats.totalShopProfit.toLocaleString()}</div>
+          </div>
+          <div className="glass" style={{ padding: 'var(--space-4)', borderRadius: 'var(--radius-md)' }}>
+            <div className="caption" style={{ marginBottom: '4px' }}>أرباح معلقة (غير مسلمة)</div>
+            <div style={{ fontSize: '1.25rem', fontWeight: 'bold', color: 'var(--warning)' }}>{stats.uncollectedProfit.toLocaleString()}</div>
+          </div>
+          <div className="glass" style={{ padding: 'var(--space-4)', borderRadius: 'var(--radius-md)' }}>
+            <div className="caption" style={{ marginBottom: '4px' }}>إجمالي ديون العملاء</div>
+            <div style={{ fontSize: '1.25rem', fontWeight: 'bold', color: 'var(--danger)' }}>{stats.debtTotal.toLocaleString()}</div>
+          </div>
+          <div className="glass" style={{ padding: 'var(--space-4)', borderRadius: 'var(--radius-md)' }}>
+            <div className="caption" style={{ marginBottom: '4px' }}>عدد الأجهزة المستلمة</div>
+            <div style={{ fontSize: '1.25rem', fontWeight: 'bold', color: 'var(--text-main)' }}>{stats.receivedDevicesCount}</div>
           </div>
         </div>
       </div>
 
       <div style={{ marginBottom: 'var(--space-8)' }}>
-        <h2 className="section-title" style={{ marginBottom: 'var(--space-4)' }}>إجراءات سريعة</h2>
-        <div style={{ display: 'flex', gap: 'var(--space-4)', flexWrap: 'wrap' }}>
-          <button className="btn btn-primary" onClick={() => document.querySelector<HTMLElement>('.nav-item:nth-child(4)')?.click()}>
-            <Plus size={18} /> إضافة عملية صيانة
-          </button>
-          <button className="btn" onClick={() => document.querySelector<HTMLElement>('.nav-item:nth-child(6)')?.click()}>
-            <Search size={18} /> بحث عن توافق آيسي
-          </button>
-          <button className="btn btn-secondary" style={{ color: 'var(--warning)' }} onClick={() => setShowSettlementModal(true)}>
-            <CalendarCheck size={18} /> تصفية وإغلاق الشهر
-          </button>
+        <h2 className="section-title" style={{ marginBottom: 'var(--space-4)' }}>الوصول السريع</h2>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 'var(--space-4)' }}>
+          {/* 1. إضافة عملية */}
+          <div className="stat-card" style={{ cursor: 'pointer', borderTop: '3px solid var(--primary)', display: 'flex', flexDirection: 'column', gap: '8px' }} onClick={() => onNavigate && onNavigate('operations', null, 'add')}>
+            <div style={{ padding: '8px', background: 'var(--primary-bg)', borderRadius: 'var(--radius-sm)', color: 'var(--primary)', width: 'fit-content' }}>
+              <Plus size={24} />
+            </div>
+            <div className="stat-title" style={{ fontSize: '1.1rem', color: 'var(--text)' }}>إضافة عملية</div>
+            <div className="caption">عملية صيانة جديدة</div>
+          </div>
+
+          {/* 2. العمليات */}
+          <div className="stat-card" style={{ cursor: 'pointer', borderTop: '3px solid var(--info)', display: 'flex', flexDirection: 'column', gap: '8px' }} onClick={() => onNavigate && onNavigate('operations')}>
+            <div style={{ padding: '8px', background: 'var(--info-bg)', borderRadius: 'var(--radius-sm)', color: 'var(--info)', width: 'fit-content' }}>
+              <Wrench size={24} />
+            </div>
+            <div className="stat-title" style={{ fontSize: '1.1rem', color: 'var(--text)' }}>العمليات</div>
+            <div className="caption">{operations.length} عملية (الشهر الحالي)</div>
+          </div>
+
+          {/* 3. قيد الصيانة */}
+          <div className="stat-card" style={{ cursor: 'pointer', borderTop: '3px solid var(--warning)', display: 'flex', flexDirection: 'column', gap: '8px' }} onClick={() => onNavigate && onNavigate('operations', { status: 'not_delivered' })}>
+            <div style={{ padding: '8px', background: 'var(--warning-bg)', borderRadius: 'var(--radius-sm)', color: 'var(--warning)', width: 'fit-content' }}>
+              <Smartphone size={24} />
+            </div>
+            <div className="stat-title" style={{ fontSize: '1.1rem', color: 'var(--text)' }}>غير مسلّمة</div>
+            <div className="caption">{operations.filter(op => op.status === 'under_maintenance' || op.status === 'completed').length} جهاز</div>
+          </div>
+
+          {/* 4. الديون */}
+          <div className="stat-card" style={{ cursor: 'pointer', borderTop: '3px solid var(--danger)', display: 'flex', flexDirection: 'column', gap: '8px' }} onClick={() => onNavigate && onNavigate('operations', { paymentStatus: 'debt' })}>
+            <div style={{ padding: '8px', background: 'var(--danger-bg)', borderRadius: 'var(--radius-sm)', color: 'var(--danger)', width: 'fit-content' }}>
+              <AlertTriangle size={24} />
+            </div>
+            <div className="stat-title" style={{ fontSize: '1.1rem', color: 'var(--text)' }}>الديون</div>
+            <div className="caption">{debts.length} جهاز</div>
+          </div>
+
+          {/* 5. بحث IC */}
+          <div className="stat-card" style={{ cursor: 'pointer', borderTop: '3px solid var(--success)', display: 'flex', flexDirection: 'column', gap: '8px' }} onClick={() => onNavigate && onNavigate('compatibilities')}>
+            <div style={{ padding: '8px', background: 'var(--success-bg)', borderRadius: 'var(--radius-sm)', color: 'var(--success)', width: 'fit-content' }}>
+              <Cpu size={24} />
+            </div>
+            <div className="stat-title" style={{ fontSize: '1.1rem', color: 'var(--text)' }}>بحث IC</div>
+            <div className="caption">البحث عن توافقية الأيسيات</div>
+          </div>
+
+          {/* 6. المصروفات */}
+          <div className="stat-card" style={{ cursor: 'pointer', borderTop: '3px solid var(--danger)', display: 'flex', flexDirection: 'column', gap: '8px' }} onClick={() => onNavigate && onNavigate('withdrawals')}>
+            <div style={{ padding: '8px', background: 'var(--danger-bg)', borderRadius: 'var(--radius-sm)', color: 'var(--danger)', width: 'fit-content' }}>
+              <Banknote size={24} />
+            </div>
+            <div className="stat-title" style={{ fontSize: '1.1rem', color: 'var(--text)' }}>المصروفات</div>
+            <div className="caption">مصروفات المحل وسلف الفنيين</div>
+          </div>
         </div>
       </div>
 
@@ -211,70 +250,6 @@ export default function Dashboard() {
           </table>
         </div>
       </div>
-
-      {showSettlementModal && (
-        <div className="modal-overlay">
-          <div className="modal-content" style={{ maxWidth: '600px' }}>
-            <h2 style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', color: 'var(--warning)', borderBottom: '1px solid var(--border)', paddingBottom: 'var(--space-4)' }}>
-              <FileText size={24} /> كشف حساب وتصفية الشهر
-            </h2>
-            
-            <div className="glass" style={{ padding: 'var(--space-5)', marginBottom: 'var(--space-6)' }}>
-              <div className="flex-between" style={{ marginBottom: 'var(--space-2)' }}>
-                <span className="caption">رأس المال الأساسي المخصص:</span>
-                <span style={{ fontWeight: 'bold', color: 'var(--text)' }}>{stats.baseCapital.toFixed(2)}</span>
-              </div>
-              <div className="flex-between" style={{ marginBottom: 'var(--space-2)' }}>
-                <span className="caption">رأس المال المعلق (ديون السوق):</span>
-                <span style={{ color: 'var(--danger)' }}>- {stats.tiedCapital.toFixed(2)}</span>
-              </div>
-              <div className="flex-between" style={{ marginBottom: 'var(--space-4)', fontWeight: 'bold', fontSize: '1.05rem', color: 'var(--info)' }}>
-                <span>رأس المال المُسترد فعلياً بالدرج:</span>
-                <span>{stats.availableCapital.toFixed(2)}</span>
-              </div>
-              
-              <hr style={{ borderColor: 'var(--border-light)', margin: 'var(--space-4) 0' }} />
-
-              <div className="flex-between" style={{ marginBottom: 'var(--space-2)' }}>
-                <span className="caption">أرباح المحل النقدية المحصلة:</span>
-                <span style={{ color: 'var(--success)' }}>+ {stats.realizedShopProfit.toFixed(2)}</span>
-              </div>
-              <div className="flex-between" style={{ marginBottom: 'var(--space-4)' }}>
-                <span className="caption">إجمالي سحوبات المحل الشخصية:</span>
-                <span style={{ color: 'var(--danger)' }}>- {stats.totalShopWithdrawal.toFixed(2)}</span>
-              </div>
-
-              <div className="flex-between" style={{ marginTop: 'var(--space-4)', fontSize: '1.25rem', fontWeight: 'bold', padding: 'var(--space-4)', background: 'var(--bg)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)' }}>
-                <span style={{ color: 'var(--text)' }}>الصافي النهائي للمحل:</span>
-                <span style={{ color: stats.shopDue >= 0 ? 'var(--success)' : 'var(--danger)' }}>
-                  {stats.shopDue.toFixed(2)}
-                </span>
-              </div>
-            </div>
-
-            <div className="form-group" style={{ marginBottom: 'var(--space-6)' }}>
-              <label>لبدء شهر جديد، يرجى إدخال رأس المال المخصص له:</label>
-              <input 
-                type="number" 
-                placeholder="مثال: 5000"
-                min="0"
-                value={newCapital}
-                onChange={e => setNewCapital(e.target.value)}
-                autoFocus
-              />
-            </div>
-
-            <div style={{ display: 'flex', gap: 'var(--space-3)' }}>
-              <button className="btn" style={{ flex: 1 }} onClick={() => setShowSettlementModal(false)} disabled={isClosing}>
-                إلغاء الأمر
-              </button>
-              <button className="btn btn-danger" style={{ flex: 2 }} onClick={confirmCloseMonth} disabled={isClosing}>
-                {isClosing ? 'جاري التصفية...' : 'تأكيد الحفظ والتصفية'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

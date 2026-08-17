@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Settings as SettingsIcon, Users, Sliders, List, Save, Download, AlertTriangle, Moon, Sun, Database, RefreshCw, RotateCcw } from 'lucide-react';
-import type { BackupMetadata } from '../types';
+import { Settings as SettingsIcon, Users, Sliders, List, Save, Download, AlertTriangle, Moon, Sun, Database, RefreshCw, RotateCcw, FileBox, FileText, Wallet } from 'lucide-react';
+import type { BackupMetadata, DashboardStats } from '../types';
 import Technicians from './Technicians';
 import QuickLists from './QuickLists';
 import * as XLSX from 'xlsx';
@@ -16,6 +16,16 @@ export default function Settings() {
   const [backups, setBackups] = useState<BackupMetadata[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const dialog = useDialog();
+
+  const [newCapital, setNewCapital] = useState<string>('');
+  const [isClosing, setIsClosing] = useState(false);
+  const [stats, setStats] = useState<DashboardStats | null>(null);
+
+  useEffect(() => {
+    if (activeTab === 'monthly_closing') {
+      (window as any).api.getDashboardStats().then((data: DashboardStats) => setStats(data));
+    }
+  }, [activeTab]);
 
   useEffect(() => {
     loadSettings();
@@ -192,6 +202,42 @@ export default function Settings() {
     }
   };
 
+  const confirmCloseMonth = async () => {
+    if (!newCapital) {
+      await dialog.warning('الرجاء إدخال رأس المال للشهر الجديد قبل التصفية');
+      return;
+    }
+    
+    if (isClosing) return;
+    setIsClosing(true);
+    
+    dialog.loading('جاري التصفية وإنشاء ملف الإكسل والنسخة الاحتياطية...');
+    
+    try {
+      const res = await (window as any).api.closeMonthWithExcel(parseFloat(newCapital));
+      
+      dialog.close();
+      
+      if (res.success) {
+        await dialog.success('تم حفظ النسخة الاحتياطية وتصفية الشهر بنجاح!');
+        setNewCapital('');
+        const data = await (window as any).api.getDashboardStats();
+        setStats(data);
+      } else {
+        if (res.reason === 'cancelled') {
+          await dialog.warning('تم إلغاء عملية التصفية لأنك لم تقم بحفظ ملف النسخة الاحتياطية.');
+        } else {
+          await dialog.error('حدث خطأ أثناء حفظ الملف: ' + res.message);
+        }
+      }
+    } catch (err: any) {
+      dialog.close();
+      await dialog.error('حدث خطأ غير متوقع: ' + err.message);
+    } finally {
+      setIsClosing(false);
+    }
+  };
+
   return (
     <div className="fade-in">
       <div className="header-flex">
@@ -251,12 +297,91 @@ export default function Settings() {
             <Sliders size={18} />
             إعدادات عامة
           </button>
+
+          <button 
+            className={`btn ${activeTab === 'monthly_closing' ? 'active' : ''}`}
+            onClick={() => setActiveTab('monthly_closing')}
+            style={{ 
+              justifyContent: 'flex-start', 
+              background: activeTab === 'monthly_closing' ? 'var(--primary-light)' : 'transparent',
+              color: activeTab === 'monthly_closing' ? 'var(--primary)' : 'var(--text-main)',
+              border: 'none',
+              boxShadow: 'none',
+              padding: 'var(--space-3) var(--space-4)'
+            }}
+          >
+            <FileBox size={18} />
+            تصفية الشهر
+          </button>
         </div>
 
         {/* Settings Content */}
         <div style={{ flex: 1, padding: '0 var(--space-4)' }}>
           {activeTab === 'technicians' && <Technicians />}
           {activeTab === 'quicklists' && <QuickLists />}
+          
+          {activeTab === 'monthly_closing' && stats && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-6)', maxWidth: '800px' }}>
+              <div className="stat-card fade-in" style={{ padding: 'var(--space-6)' }}>
+                <h3 style={{ marginBottom: 'var(--space-4)', display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--primary)' }}>
+                  <FileText size={24} /> كشف حساب وتصفية الشهر
+                </h3>
+                
+                <div className="glass" style={{ padding: 'var(--space-5)', marginBottom: 'var(--space-6)' }}>
+                  <div className="flex-between" style={{ marginBottom: 'var(--space-2)' }}>
+                    <span className="caption">رأس المال الأساسي المخصص:</span>
+                    <span style={{ fontWeight: 'bold', color: 'var(--text)' }}>{stats.baseCapital.toFixed(2)}</span>
+                  </div>
+                  <div className="flex-between" style={{ marginBottom: 'var(--space-2)' }}>
+                    <span className="caption">رأس المال المعلق (ديون السوق):</span>
+                    <span style={{ color: 'var(--danger)' }}>- {stats.tiedCapital.toFixed(2)}</span>
+                  </div>
+                  <div className="flex-between" style={{ marginBottom: 'var(--space-4)', fontWeight: 'bold', fontSize: '1.05rem', color: 'var(--info)' }}>
+                    <span>رأس المال المُسترد فعلياً بالدرج:</span>
+                    <span>{stats.availableCapital.toFixed(2)}</span>
+                  </div>
+                  
+                  <hr style={{ borderColor: 'var(--border-light)', margin: 'var(--space-4) 0' }} />
+
+                  <div className="flex-between" style={{ marginBottom: 'var(--space-2)' }}>
+                    <span className="caption">أرباح المحل النقدية المحصلة:</span>
+                    <span style={{ color: 'var(--success)' }}>+ {stats.realizedShopProfit.toFixed(2)}</span>
+                  </div>
+                  <div className="flex-between" style={{ marginBottom: 'var(--space-4)' }}>
+                    <span className="caption">إجمالي سحوبات المحل الشخصية:</span>
+                    <span style={{ color: 'var(--danger)' }}>- {stats.totalShopWithdrawal.toFixed(2)}</span>
+                  </div>
+                  
+                  <div className="flex-between" style={{ marginTop: 'var(--space-4)', fontSize: '1.25rem', fontWeight: 'bold', padding: 'var(--space-4)', background: 'var(--bg)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)' }}>
+                    <span style={{ color: 'var(--text)' }}>الصافي النهائي للمحل:</span>
+                    <span style={{ color: stats.shopDue >= 0 ? 'var(--success)' : 'var(--danger)' }}>
+                      {stats.shopDue.toFixed(2)}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="form-group" style={{ marginBottom: 'var(--space-6)' }}>
+                  <label>لبدء شهر جديد، يرجى إدخال رأس المال المخصص له:</label>
+                  <input 
+                    type="number" 
+                    placeholder="مثال: 5000"
+                    min="0"
+                    value={newCapital}
+                    onChange={e => setNewCapital(e.target.value)}
+                  />
+                </div>
+
+                <div className="alert alert-warning" style={{ marginTop: 'var(--space-4)', marginBottom: 'var(--space-4)' }}>
+                  <strong>تحذير:</strong> عملية التصفية ستقوم بحفظ المعاملات الحالية في الأرشيف (النسخة الاحتياطية)، وبدء سجلات جديدة بالكامل للشهر القادم. يرجى التأكد من أنك قمت بمراجعة جميع الحسابات.
+                </div>
+
+                <button className="btn btn-primary" style={{ width: '100%', background: 'var(--warning)', borderColor: 'var(--warning)', padding: 'var(--space-3)' }} onClick={confirmCloseMonth} disabled={isClosing}>
+                  {isClosing ? 'جاري التصفية...' : 'تأكيد تصفية الشهر'}
+                </button>
+              </div>
+            </div>
+          )}
+
           {activeTab === 'general' && settings && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-6)', maxWidth: '800px' }}>
               <div className="stat-card fade-in" style={{ padding: 'var(--space-6)' }}>
@@ -289,6 +414,8 @@ export default function Settings() {
                     - <code>[اسم_الجهاز]</code> : يتم استبداله باسم الجهاز المصلح.<br />
                     - <code>[المشكلة]</code> : يتم استبداله بالأعطال المسجلة للجهاز.<br />
                     - <code>[المبلغ]</code> : يتم استبداله بالسعر النهائي المطلوب.<br />
+                    - <code>[المبلغ_الواصل]</code> : يتم استبداله بالمبلغ الذي دفعه العميل.<br />
+                    - <code>[المبلغ_المتبقي]</code> : يتم استبداله بالمبلغ المتبقي على العميل.<br />
                     - <code>[اسم_المحل]</code> : يتم استبداله باسم المركز الخاص بك.
                   </div>
                 </div>

@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { app, dialog } from 'electron';
 import { getCanonicalDatabaseHash, validateSchema } from './backup.js';
+import { userDataPath } from './database.js';
 
 interface MigrationState {
   source: string;
@@ -14,18 +15,9 @@ interface MigrationState {
   migrationVersion: number;
 }
 
-const isDev = !app.isPackaged;
-const CURRENT_DB_PATH = isDev 
-  ? path.join(app.getAppPath(), 'database.json')
-  : path.join(app.getPath('userData'), 'database.json');
-
-const MIGRATION_STATE_PATH = isDev
-  ? path.join(app.getAppPath(), 'migration-state.json')
-  : path.join(app.getPath('userData'), 'migration-state.json');
-
-const BACKUP_DIR = isDev
-  ? path.join(app.getAppPath(), 'backups_v2')
-  : path.join(app.getPath('userData'), 'backups_v2');
+const CURRENT_DB_PATH = path.join(userDataPath, 'database.json');
+const MIGRATION_STATE_PATH = path.join(userDataPath, 'migration-state.json');
+const BACKUP_DIR = path.join(userDataPath, 'backups_v2');
 
 function getLegacyPaths(): string[] {
   const appData = app.getPath('appData');

@@ -138,7 +138,7 @@ export default function Withdrawals() {
           </div>
           
           <div className="flex-center gap-2">
-            <button type="submit" className="btn btn-primary" style={{ flex: 1 }}>{editingId ? 'حفظ التعديل' : 'إضافة सحب'}</button>
+            <button type="submit" className="btn btn-primary" style={{ flex: 1 }}>{editingId ? 'حفظ التعديل' : 'إضافة سحب'}</button>
             {editingId && (
               <button type="button" className="btn btn-secondary" onClick={cancelEdit}>إلغاء</button>
             )}

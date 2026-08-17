@@ -1,3 +1,4 @@
+import './pre-init.js';
 import { app, BrowserWindow, ipcMain, dialog } from 'electron';
 import path from 'node:path';
 import fs from 'node:fs';
@@ -105,8 +106,9 @@ function setupIPC() {
   });
 
   ipcMain.handle('restart-app', () => {
-    app.relaunch();
-    app.exit(0);
+    if (mainWindow) {
+      mainWindow.reload();
+    }
   });
 
   // Technicians
@@ -159,6 +161,139 @@ function setupIPC() {
     return { success: false, reason: 'NOT_FOUND' };
   });
 
+  // Customers
+  ipcMain.handle('get-customers', () => {
+    const explicitCustomers = db.data.customers || [];
+    const operations = db.data.operations || [];
+    
+    const combined = [...explicitCustomers];
+    const existingPhones = new Set(explicitCustomers.map((c: any) => c.phone).filter(Boolean));
+    const existingNames = new Set(explicitCustomers.map((c: any) => c.name).filter(Boolean));
+    
+    // Reverse operations so we get the latest info for a customer
+    const reversedOps = [...operations].reverse();
+    
+    reversedOps.forEach((op: any) => {
+      const name = op.customer_name?.trim();
+      const phone = op.customer_phone?.trim();
+      
+      if (!name) return;
+      
+      const phoneExists = phone && existingPhones.has(phone);
+      const nameExists = existingNames.has(name);
+      
+      if (!phoneExists && !nameExists) {
+        // Generate a stable negative ID based on name/phone
+        const strToHash = `${name}-${phone || ''}`;
+        let hash = 0;
+        for (let i = 0; i < strToHash.length; i++) {
+          hash = (hash << 5) - hash + strToHash.charCodeAt(i);
+          hash |= 0;
+        }
+        const derivedId = -Math.abs(hash) || -Math.floor(Math.random() * 1000000);
+        
+        const newCust = {
+          id: derivedId,
+          name: name,
+          phone: phone || '',
+          notes: 'مستورد من العمليات القديمة',
+          created_at: op.date || new Date().toISOString(),
+          updated_at: op.date || new Date().toISOString()
+        };
+        
+        combined.push(newCust);
+        if (phone) existingPhones.add(phone);
+        existingNames.add(name);
+      }
+    });
+    
+    return combined;
+  });
+
+  ipcMain.handle('add-customer', (_, customer) => {
+    if (!db.data.customers) db.data.customers = [];
+    const newCustomer = {
+      id: Date.now(),
+      name: customer.name,
+      phone: customer.phone,
+      notes: customer.notes || '',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+    db.data.customers.unshift(newCustomer);
+    if (!db.save()) {
+      db.data.customers.shift();
+      db.load();
+      return { success: false, reason: 'DATABASE_SAVE_FAILED' };
+    }
+    return { success: true, id: newCustomer.id };
+  });
+
+  ipcMain.handle('edit-customer', (_, id, updatedData) => {
+    if (!db.data.customers) db.data.customers = [];
+    const idx = db.data.customers.findIndex((c: any) => c.id === id);
+    if (idx !== -1) {
+      const oldCustomer = { ...db.data.customers[idx] };
+      db.data.customers[idx] = {
+        ...oldCustomer,
+        ...updatedData,
+        updated_at: new Date().toISOString()
+      };
+      if (!db.save()) {
+        db.data.customers[idx] = oldCustomer;
+        db.load();
+        return { success: false, reason: 'DATABASE_SAVE_FAILED' };
+      }
+      return { success: true };
+    } else if (id < 0) {
+      const newCustomer = {
+        id: id,
+        name: updatedData.name,
+        phone: updatedData.phone,
+        notes: updatedData.notes || '',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      };
+      db.data.customers.unshift(newCustomer);
+      if (!db.save()) {
+        db.data.customers.shift();
+        db.load();
+        return { success: false, reason: 'DATABASE_SAVE_FAILED' };
+      }
+      return { success: true };
+    }
+    return { success: false, reason: 'NOT_FOUND' };
+  });
+
+  ipcMain.handle('delete-customer', (_, id) => {
+    if (!db.data.customers) return { success: false, reason: 'NOT_FOUND' };
+    const idx = db.data.customers.findIndex((c: any) => c.id === id);
+    if (idx !== -1) {
+      const oldCustomer = db.data.customers[idx];
+      db.data.customers.splice(idx, 1);
+      if (!db.save()) {
+        db.data.customers.splice(idx, 0, oldCustomer);
+        db.load();
+        return { success: false, reason: 'DATABASE_SAVE_FAILED' };
+      }
+      return { success: true };
+    } else if (id < 0) {
+      return { success: false, reason: 'لا يمكن حذف عميل مستورد من العمليات القديمة مباشرة. قم بتعديل بياناته لحفظه كعميل منفصل أو احذف عملياته.' };
+    }
+    return { success: false, reason: 'NOT_FOUND' };
+  });
+
+  ipcMain.handle('get-customer-operations', (_, customerId, customerPhone) => {
+    return db.data.operations.filter((op: any) => 
+      op.customer_id === customerId || 
+      (customerPhone && op.customer_phone === customerPhone)
+    ).map((op: any) => {
+      const tech = db.data.technicians.find((t: any) => t.id === op.technician_id);
+      return { ...op, technician_name: tech ? tech.name : 'Unknown' };
+    }).reverse();
+  });
+
+
   function calculateProfits(price: number, cost: number, techPercentage: number) {
     const netProfit = Math.max(0, price - cost);
     const techProfit = Number((netProfit * techPercentage).toFixed(2));
@@ -184,7 +319,13 @@ function setupIPC() {
   });
 
   ipcMain.handle('add-operation', (_, op) => {
-    const newId = Date.now(); // Prevents ID conflicts
+    // Generate sequential ID, ignoring massive timestamp IDs
+    const validIds = db.data.operations.map((o: any) => o.id).filter((id: number) => id < 100000000000);
+    const maxId = validIds.length > 0 ? Math.max(...validIds) : 0;
+    let newId = maxId + 1;
+    while (db.data.operations.some((o: any) => o.id === newId)) {
+      newId++;
+    }
     
     // Validate Technician
     const techExists = db.data.technicians.find((t: any) => t.id === op.technician_id);
@@ -198,17 +339,67 @@ function setupIPC() {
     if (op.price < 0) op.price = 0;
     if (op.cost < 0) op.cost = 0;
     
+    op.paid_amount = Number(op.paid_amount);
+    if (isNaN(op.paid_amount) || op.paid_amount < 0) op.paid_amount = 0;
+    if (op.paid_amount > op.price) op.paid_amount = op.price;
+
+    if (op.warranty_enabled) {
+      op.warranty_days = Number(op.warranty_days) || 0;
+      if (op.warranty_days > 0) {
+        const dateObj = new Date();
+        dateObj.setDate(dateObj.getDate() + op.warranty_days);
+        op.warranty_expiry_date = dateObj.toLocaleDateString('en-GB');
+      } else {
+        op.warranty_enabled = false;
+        delete op.warranty_days;
+        delete op.warranty_note;
+        delete op.warranty_expiry_date;
+      }
+    } else {
+      delete op.warranty_days;
+      delete op.warranty_note;
+      delete op.warranty_expiry_date;
+    }
+    
     // Validate enums
-    if (!['under_maintenance', 'completed', 'delivered'].includes(op.status)) {
+    if (op.status && !['under_maintenance', 'completed', 'delivered', 'cancelled'].includes(op.status)) {
       op.status = 'under_maintenance';
     }
-    if (!['cash', 'debt'].includes(op.payment_status)) {
+    
+    // Auto-calculate payment_status based on paid_amount
+    if (op.paid_amount >= op.price) {
       op.payment_status = 'cash';
+    } else if (op.paid_amount > 0) {
+      op.payment_status = 'partial';
+    } else {
+      op.payment_status = 'debt';
     }
     // Calculate profits backend-side
     const techPercentage = Number(techExists.profit_percentage) || 0;
     const { techProfit, shopProfit } = calculateProfits(op.price, op.cost, techPercentage);
     
+    // Auto-create customer if missing
+    if (!db.data.customers) db.data.customers = [];
+    if (op.customer_name) {
+      const existing = db.data.customers.find((c: any) => 
+        c.name === op.customer_name || (c.phone && c.phone === op.customer_phone)
+      );
+      if (existing) {
+        op.customer_id = existing.id;
+      } else {
+        const newCustomer = {
+          id: Date.now() + Math.floor(Math.random() * 10000),
+          name: op.customer_name,
+          phone: op.customer_phone || '',
+          notes: '',
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        };
+        db.data.customers.push(newCustomer);
+        op.customer_id = newCustomer.id;
+      }
+    }
+
     const newOp = {
       id: newId,
       date: new Date().toLocaleDateString('en-GB'),
@@ -250,11 +441,47 @@ function setupIPC() {
       if (updatedOp.price < 0) updatedOp.price = 0;
       if (updatedOp.cost < 0) updatedOp.cost = 0;
       
-      if (updatedOp.status && !['under_maintenance', 'completed', 'delivered'].includes(updatedOp.status)) {
+      if (updatedOp.paid_amount !== undefined) {
+        updatedOp.paid_amount = Number(updatedOp.paid_amount) || 0;
+        if (updatedOp.paid_amount < 0) updatedOp.paid_amount = 0;
+        if (updatedOp.paid_amount > updatedOp.price) updatedOp.paid_amount = updatedOp.price;
+      }
+
+      if (updatedOp.warranty_enabled !== undefined) {
+        if (updatedOp.warranty_enabled) {
+          updatedOp.warranty_days = Number(updatedOp.warranty_days) || 0;
+          if (updatedOp.warranty_days > 0) {
+            const [day, month, year] = db.data.operations[idx].date.split('/');
+            const baseDate = new Date(Number(year), Number(month) - 1, Number(day));
+            baseDate.setDate(baseDate.getDate() + updatedOp.warranty_days);
+            updatedOp.warranty_expiry_date = baseDate.toLocaleDateString('en-GB');
+          } else {
+            updatedOp.warranty_enabled = false;
+            updatedOp.warranty_days = undefined;
+            updatedOp.warranty_note = undefined;
+            updatedOp.warranty_expiry_date = undefined;
+          }
+        } else {
+          updatedOp.warranty_days = undefined;
+          updatedOp.warranty_note = undefined;
+          updatedOp.warranty_expiry_date = undefined;
+        }
+      }
+      
+      if (updatedOp.status && !['under_maintenance', 'completed', 'delivered', 'cancelled'].includes(updatedOp.status)) {
         updatedOp.status = 'under_maintenance';
       }
-      if (updatedOp.payment_status && !['cash', 'debt'].includes(updatedOp.payment_status)) {
+
+      // Re-calculate payment_status if paid_amount or price changed
+      const priceToUse = updatedOp.price !== undefined ? updatedOp.price : db.data.operations[idx].price;
+      const paidAmountToUse = updatedOp.paid_amount !== undefined ? updatedOp.paid_amount : (db.data.operations[idx].paid_amount ?? (db.data.operations[idx].payment_status === 'cash' ? db.data.operations[idx].price : 0));
+      
+      if (paidAmountToUse >= priceToUse) {
         updatedOp.payment_status = 'cash';
+      } else if (paidAmountToUse > 0) {
+        updatedOp.payment_status = 'partial';
+      } else {
+        updatedOp.payment_status = 'debt';
       }
       
       const oldOp = { ...db.data.operations[idx] };
@@ -295,6 +522,27 @@ function setupIPC() {
         mergedOp.shop_profit = shopProfit;
       }
 
+      if (mergedOp.customer_name) {
+        if (!db.data.customers) db.data.customers = [];
+        const existing = db.data.customers.find((c: any) => 
+          c.name === mergedOp.customer_name || (c.phone && c.phone === mergedOp.customer_phone)
+        );
+        if (existing) {
+          mergedOp.customer_id = existing.id;
+        } else {
+          const newCustomer = {
+            id: Date.now() + Math.floor(Math.random() * 10000),
+            name: mergedOp.customer_name,
+            phone: mergedOp.customer_phone || '',
+            notes: '',
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          };
+          db.data.customers.push(newCustomer);
+          mergedOp.customer_id = newCustomer.id;
+        }
+      }
+
       db.data.operations[idx] = mergedOp;
       if (!db.save()) {
         db.data.operations[idx] = oldOp;
@@ -328,7 +576,7 @@ function setupIPC() {
   // Debts
   ipcMain.handle('get-debts', () => {
     return db.data.operations
-      .filter((op: any) => op.payment_status === 'debt')
+      .filter((op: any) => op.payment_status === 'debt' || op.payment_status === 'partial')
       .map((op: any) => {
         const tech = db.data.technicians.find((t: any) => t.id === op.technician_id);
         return { ...op, technician_name: tech ? tech.name : 'Unknown' };
@@ -338,22 +586,25 @@ function setupIPC() {
   ipcMain.handle('pay-debt', (_, operation_id) => {
     const op = db.data.operations.find((o: any) => o.id === operation_id);
     if (op) {
-      if (op.payment_status !== 'debt') {
+      if (op.payment_status === 'cash') {
         return { success: false, reason: 'DEBT_ALREADY_PAID' };
       }
       
       const oldStatus = op.payment_status;
       const oldPaidInMonth = op.paid_in_month_id;
       const oldPaidAt = op.paid_at;
+      const oldPaidAmount = op.paid_amount;
 
       op.payment_status = 'cash';
       op.paid_in_month_id = getCurrentMonth().id;
       op.paid_at = new Date().toISOString();
+      op.paid_amount = op.price;
       
       if (!db.save()) {
         op.payment_status = oldStatus;
         op.paid_in_month_id = oldPaidInMonth;
         op.paid_at = oldPaidAt;
+        op.paid_amount = oldPaidAmount;
         db.load();
         return { success: false, reason: 'DATABASE_SAVE_FAILED' };
       }
@@ -462,13 +713,17 @@ function setupIPC() {
     // Total profit ONLY for delivered operations
     const totalProfit = deliveredOps.reduce((sum: number, op: any) => sum + ((op.price || 0) - (op.cost || 0)), 0);
 
-    // Realized vs Unrealized
-    const cashOps = deliveredOps.filter((op: any) => op.payment_status === 'cash' && !op.paid_in_month_id);
-    const paidDebts = db.data.operations.filter((op: any) => op.paid_in_month_id === currentMonth.id && op.status === 'delivered');
-    const unpaidDebts = deliveredOps.filter((op: any) => op.payment_status === 'debt');
+    // Helper to get paid amount with fallback for older operations
+    const getPaidAmount = (op: any) => op.paid_amount ?? (op.payment_status === 'cash' ? (op.price || 0) : 0);
+    const getRemainingAmount = (op: any) => Math.max(0, (op.price || 0) - getPaidAmount(op));
 
-    const totalCashReceived = cashOps.reduce((sum: number, op: any) => sum + (op.price || 0), 0) +
-      paidDebts.reduce((sum: number, op: any) => sum + (op.price || 0), 0);
+    // Realized vs Unrealized (Cash is recorded when received, regardless of device status)
+    const cashOps = currentMonthOps.filter((op: any) => !op.paid_in_month_id);
+    const paidDebts = db.data.operations.filter((op: any) => op.paid_in_month_id === currentMonth.id);
+    const unpaidDebts = db.data.operations.filter((op: any) => getRemainingAmount(op) > 0);
+
+    const totalCashReceived = cashOps.reduce((sum: number, op: any) => sum + getPaidAmount(op), 0) +
+      paidDebts.reduce((sum: number, op: any) => sum + getRemainingAmount(op), 0);
 
     // Cost of ALL operations created this month is deducted from the drawer (as parts are bought with cash)
     const totalOpsCost = currentMonthOps.reduce((sum: number, op: any) => sum + (op.cost || 0), 0);
@@ -481,14 +736,31 @@ function setupIPC() {
     // 1. cashBox = start_capital + totalCashReceived - totalOpsCost - totalWithdrawals
     const cashBox = currentMonth.start_capital + totalCashReceived - totalOpsCost - totalWithdrawals;
 
-    // 3. debtTotal = unpaidDebts.reduce(sum of prices)
-    const debtTotal = unpaidDebts.reduce((sum: number, op: any) => sum + (op.price || 0), 0);
+    // 3. debtTotal = sum of remaining amounts across ALL months
+    const allDebts = db.data.operations.filter((op: any) => op.payment_status === 'debt' || op.payment_status === 'partial');
+    const debtTotal = allDebts.reduce((sum: number, op: any) => sum + getRemainingAmount(op), 0);
+
+    // New metrics for Reports Card
+    const totalTechProfit = deliveredOps.reduce((sum: number, op: any) => sum + (op.tech_profit || 0), 0);
+    const totalShopProfit = deliveredOps.reduce((sum: number, op: any) => sum + (op.shop_profit || 0), 0);
+    
+    const uncollectedOps = currentMonthOps.filter((op: any) => op.status !== 'delivered');
+    const uncollectedProfit = uncollectedOps.reduce((sum: number, op: any) => sum + ((op.price || 0) - (op.cost || 0)), 0);
+    
+    const receivedDevicesCount = currentMonthOps.length;
 
     return {
       cashBox,
       totalProfit,
       debtTotal,
       totalWithdrawals,
+      
+      // New Stats for Reports Card
+      totalTechProfit,
+      totalShopProfit,
+      uncollectedProfit,
+      receivedDevicesCount,
+      
       // For compatibility if modal still uses them:
       baseCapital: currentMonth.start_capital,
       tiedCapital: unpaidDebts.reduce((sum: number, op: any) => sum + (op.cost || 0), 0),
@@ -514,7 +786,7 @@ function setupIPC() {
         const realizedProfit = cashOps.reduce((sum: number, op: any) => sum + (op.tech_profit || 0), 0) +
           paidDebts.reduce((sum: number, op: any) => sum + (op.tech_profit || 0), 0);
 
-        const unpaidDebts = db.data.operations.filter((op: any) => op.technician_id === tech.id && op.payment_status === 'debt');
+        const unpaidDebts = db.data.operations.filter((op: any) => op.technician_id === tech.id && (op.payment_status === 'debt' || op.payment_status === 'partial'));
         const unrealizedProfit = unpaidDebts.reduce((sum: number, op: any) => sum + (op.tech_profit || 0), 0);
 
         const techWithdrawal = db.data.withdrawals

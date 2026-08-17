@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
-import { Home, Wrench, Wallet, Settings, Cpu, Activity, Menu, ChevronRight, ChevronLeft } from 'lucide-react';
+import { Home, Wrench, Wallet, Settings, Cpu, Activity, Menu, ChevronRight, ChevronLeft, Users } from 'lucide-react';
 import Dashboard from './components/Dashboard';
 import Operations from './components/Operations';
 import Withdrawals from './components/Withdrawals';
+import Customers from './components/Customers';
 import SettingsScreen from './components/Settings';
 import CompatibilitySearch from './components/CompatibilitySearch';
 import { DialogProvider } from './components/ui/DialogProvider';
@@ -12,6 +13,7 @@ function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [shopName, setShopName] = useState('مركز الصيانة');
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [initialOperationsFilter, setInitialOperationsFilter] = useState<any>(null);
 
   useEffect(() => {
     (window as any).api.getSettings().then((settings: any) => {
@@ -24,14 +26,25 @@ function App() {
     });
   }, []);
 
+  const [operationsMode, setOperationsMode] = useState<'list' | 'add'>('list');
+
+  const handleNavigate = (tab: string, filter?: any, mode: 'list' | 'add' = 'list') => {
+    if (tab === 'operations') {
+      setInitialOperationsFilter(filter);
+      setOperationsMode(mode);
+    }
+    setActiveTab(tab);
+  };
+
   const renderContent = () => {
     switch(activeTab) {
-      case 'dashboard': return <Dashboard />;
-      case 'operations': return <Operations />;
+      case 'dashboard': return <Dashboard onNavigate={handleNavigate} />;
+      case 'operations': return <Operations initialFilter={initialOperationsFilter} initialMode={operationsMode} clearInitialFilter={() => setInitialOperationsFilter(null)} />;
+      case 'customers': return <Customers />;
       case 'withdrawals': return <Withdrawals />;
       case 'compatibilities': return <CompatibilitySearch />;
       case 'settings': return <SettingsScreen />;
-      default: return <Dashboard />;
+      default: return <Dashboard onNavigate={handleNavigate} />;
     }
   };
 
@@ -39,6 +52,7 @@ function App() {
     switch(activeTab) {
       case 'dashboard': return 'لوحة التحكم';
       case 'operations': return 'العمليات والصيانة';
+      case 'customers': return 'العملاء';
       case 'withdrawals': return 'السحوبات والمصروفات';
       case 'compatibilities': return 'دليل التوافق';
       case 'settings': return 'الإعدادات';
@@ -68,7 +82,7 @@ function App() {
           
           <div 
             className={`nav-item ${activeTab === 'dashboard' ? 'active' : ''}`}
-            onClick={() => setActiveTab('dashboard')}
+            onClick={() => handleNavigate('dashboard')}
             title={isSidebarCollapsed ? 'لوحة التحكم' : ''}
           >
             <Home size={20} />
@@ -77,7 +91,7 @@ function App() {
           
           <div 
             className={`nav-item ${activeTab === 'operations' ? 'active' : ''}`}
-            onClick={() => setActiveTab('operations')}
+            onClick={() => handleNavigate('operations')}
             title={isSidebarCollapsed ? 'العمليات والصيانة' : ''}
           >
             <Wrench size={20} />
@@ -85,27 +99,29 @@ function App() {
           </div>
           
           <div 
+            className={`nav-item ${activeTab === 'customers' ? 'active' : ''}`}
+            onClick={() => handleNavigate('customers')}
+            title={isSidebarCollapsed ? 'العملاء' : ''}
+          >
+            <Users size={20} />
+            {!isSidebarCollapsed && <span>العملاء</span>}
+          </div>
+          
+          <div 
             className={`nav-item ${activeTab === 'withdrawals' ? 'active' : ''}`}
-            onClick={() => setActiveTab('withdrawals')}
+            onClick={() => handleNavigate('withdrawals')}
             title={isSidebarCollapsed ? 'السحوبات والمصروفات' : ''}
           >
             <Wallet size={20} />
             {!isSidebarCollapsed && <span>السحوبات والمصروفات</span>}
           </div>
 
-          <div 
-            className={`nav-item ${activeTab === 'compatibilities' ? 'active' : ''}`}
-            onClick={() => setActiveTab('compatibilities')}
-            title={isSidebarCollapsed ? 'دليل التوافق' : ''}
-          >
-            <Cpu size={20} />
-            {!isSidebarCollapsed && <span>دليل التوافق</span>}
-          </div>
+          {/* Compatibilities moved to Dashboard */}
           
           <div style={{ marginTop: 'auto', paddingTop: '1rem', borderTop: '1px solid var(--border)' }}>
             <div 
               className={`nav-item ${activeTab === 'settings' ? 'active' : ''}`} 
-              onClick={() => setActiveTab('settings')}
+              onClick={() => handleNavigate('settings')}
               title={isSidebarCollapsed ? 'الإعدادات' : ''}
             >
               <Settings size={20} />

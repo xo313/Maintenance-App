@@ -1,12 +1,14 @@
 import path from 'path';
 import { app, dialog } from 'electron';
 import fs from 'fs';
-import { findLatestValidBackup } from './backup.js';
+import { findLatestValidBackup, getCanonicalDatabaseHash } from './backup.js';
 
 const isDev = !app.isPackaged;
-const dbPath = isDev 
-  ? path.join(app.getAppPath(), 'database.json')
-  : path.join(app.getPath('userData'), 'database.json');
+export const userDataPath = isDev
+  ? app.getAppPath()
+  : path.join(app.getPath('appData'), 'maintenance_app');
+
+const dbPath = path.join(userDataPath, 'database.json');
 
 class SimpleDB {
   data: any = {
@@ -14,7 +16,7 @@ class SimpleDB {
       id: 1, 
       base_capital: 0, 
       shop_name: 'مركز الصيانة',
-      whatsapp_template: 'السلام عليكم [اسم_الزبون] 👋\nنود إعلامك بأن جهازك ([اسم_الجهاز]) قد تمت صيانته وهو جاهز للاستلام.\nالمبلغ المطلوب: [المبلغ] دينار.\nشكراً لاختيارك مركزنا! 🛠️✨',
+      whatsapp_template: 'السلام عليكم [اسم_الزبون] 👋\nنود إعلامك بأن جهازك ([اسم_الجهاز]) قد تمت صيانته وهو جاهز للاستلام.\nالمبلغ المطلوب: [المبلغ]\nشكراً لاختيارك مركزنا! 🛠️✨',
       theme: 'dark'
     },
     months: [], // { id, month_name, start_capital, is_closed, created_at, closed_at }
@@ -24,7 +26,8 @@ class SimpleDB {
     ic_compatibilities: [],
     scrap_devices: [],
     common_devices: [],
-    common_faults: []
+    common_faults: [],
+    customers: []
   };
 
   constructor() {
@@ -41,7 +44,9 @@ class SimpleDB {
       } catch {
         this.recoverFromCorruptDatabase();
       }
-      
+
+      const initialHash = getCanonicalDatabaseHash(this.data);
+
       // Migration: Ensure existing data has month_id and payment_status
       if (!this.data.months) this.data.months = [];
       
@@ -59,7 +64,7 @@ class SimpleDB {
       
       // Ensure settings have new fields
       if (!this.data.settings.whatsapp_template) {
-        this.data.settings.whatsapp_template = 'السلام عليكم [اسم_الزبون] 👋\nنود إعلامك بأن جهازك ([اسم_الجهاز]) قد تمت صيانته وهو جاهز للاستلام.\nالمبلغ المطلوب: [المبلغ] دينار.\nشكراً لاختيارك مركزنا! 🛠️✨';
+        this.data.settings.whatsapp_template = 'السلام عليكم [اسم_الزبون] 👋\nنود إعلامك بأن جهازك ([اسم_الجهاز]) قد تمت صيانته وهو جاهز للاستلام.\nالمبلغ المطلوب: [المبلغ]\nشكراً لاختيارك مركزنا! 🛠️✨';
       }
       if (!this.data.settings.theme) {
         this.data.settings.theme = 'dark';
@@ -82,6 +87,28 @@ class SimpleDB {
           }
           
           if (!op.status) op.status = 'delivered';
+          
+          // Migrate missing customers from operations to customers table
+          if (!this.data.customers) this.data.customers = [];
+          if (op.customer_name) {
+            const existing = this.data.customers.find((c: any) => 
+              c.name === op.customer_name || (c.phone && c.phone === op.customer_phone)
+            );
+            if (!existing) {
+              const newCustomer = {
+                id: Date.now() + Math.floor(Math.random() * 10000),
+                name: op.customer_name,
+                phone: op.customer_phone || '',
+                notes: '',
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString()
+              };
+              this.data.customers.push(newCustomer);
+              op.customer_id = newCustomer.id;
+            } else if (!op.customer_id) {
+              op.customer_id = existing.id;
+            }
+          }
         });
       }
       if (this.data.withdrawals) {
@@ -101,12 +128,9 @@ class SimpleDB {
       if (!this.data.scrap_devices) {
         this.data.scrap_devices = [];
       }
-      if (!this.data.common_devices) {
-        this.data.common_devices = [];
-      }
-      if (!this.data.common_faults) {
-        this.data.common_faults = [];
-      }
+      if (!this.data.common_devices) this.data.common_devices = [];
+      if (!this.data.common_faults) this.data.common_faults = [];
+      if (!this.data.customers) this.data.customers = [];
       
       // Auto-merge new seed data for existing users
       const seedPath = path.join(app.getAppPath(), 'default_seed.json');
@@ -144,7 +168,9 @@ class SimpleDB {
         }
       }
 
-      this.save();
+      if (getCanonicalDatabaseHash(this.data) !== initialHash) {
+        this.save();
+      }
     } else {
       // First time init
       const seedPath = path.join(app.getAppPath(), 'default_seed.json');
@@ -174,17 +200,17 @@ class SimpleDB {
 
     const collectionFields = [
       'months', 'technicians', 'operations', 'withdrawals',
-      'ic_compatibilities', 'scrap_devices', 'common_devices', 'common_faults'
+      'ic_compatibilities', 'scrap_devices', 'common_devices', 'common_faults', 'customers'
     ];
     return collectionFields.every(field => data[field] === undefined || Array.isArray(data[field]));
   }
 
   private recoverFromCorruptDatabase() {
     const diagnosticPath = this.preserveCorruptDatabase();
-    const userDataPath = process.env.TEST_USER_DATA || app.getPath('userData');
+    const currentDataPath = process.env.TEST_USER_DATA || userDataPath;
     const recovery = findLatestValidBackup([
       path.join(path.dirname(dbPath), 'backups_v2'),
-      path.join(userDataPath, 'backups_v2')
+      path.join(currentDataPath, 'backups_v2')
     ]);
 
     if (recovery) {

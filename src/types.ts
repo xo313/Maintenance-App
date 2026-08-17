@@ -6,6 +6,15 @@ export interface Settings {
   theme?: 'light' | 'dark';
 }
 
+export interface Customer {
+  id: number;
+  name: string;
+  phone: string;
+  notes?: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface BackupMetadata {
   filename: string;
   created_at: string;
@@ -36,9 +45,11 @@ export interface Technician {
 export interface Operation {
   id: number;
   date: string;
+  customer_id?: number;
   customer_name: string;
   customer_phone?: string;
   device: string;
+  device_code?: string;
   faults?: string[];
   cost: number;
   price: number;
@@ -47,11 +58,18 @@ export interface Operation {
   technician_name?: string;
   shop_profit: number;
   tech_profit: number;
-  payment_status: 'cash' | 'debt';
-  status: 'under_maintenance' | 'completed' | 'delivered';
+  payment_status: 'cash' | 'debt' | 'partial';
+  status: 'under_maintenance' | 'completed' | 'delivered' | 'cancelled';
   month_id: number;
   paid_in_month_id?: number;
   paid_at?: string;
+  paid_amount?: number;
+  notes?: string;
+  accessories?: string;
+  warranty_enabled?: boolean;
+  warranty_days?: number;
+  warranty_note?: string;
+  warranty_expiry_date?: string;
 }
 
 export interface Withdrawal {
@@ -70,6 +88,12 @@ export interface DashboardStats {
   totalProfit: number;
   debtTotal: number;
   totalWithdrawals: number;
+  
+  // New Stats for Reports Card
+  totalTechProfit: number;
+  totalShopProfit: number;
+  uncollectedProfit: number;
+  receivedDevicesCount: number;
   
   // For compatibility with settlement modal:
   baseCapital: number;

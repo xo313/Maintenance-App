@@ -10,6 +10,12 @@ contextBridge.exposeInMainWorld('api', {
   editTechnician: (id: number, name: string, profit_percentage: number) => ipcRenderer.invoke('edit-technician', id, name, profit_percentage),
   deleteTechnician: (id: number) => ipcRenderer.invoke('delete-technician', id),
   
+  getCustomers: () => ipcRenderer.invoke('get-customers'),
+  addCustomer: (customer: any) => ipcRenderer.invoke('add-customer', customer),
+  editCustomer: (id: number, data: any) => ipcRenderer.invoke('edit-customer', id, data),
+  deleteCustomer: (id: number) => ipcRenderer.invoke('delete-customer', id),
+  getCustomerOperations: (id: number, phone: string) => ipcRenderer.invoke('get-customer-operations', id, phone),
+  
   getOperations: () => ipcRenderer.invoke('get-operations'),
   addOperation: (op: Partial<Operation>) => ipcRenderer.invoke('add-operation', op),
   editOperation: (id: number, op: Partial<Operation>) => ipcRenderer.invoke('edit-operation', id, op),

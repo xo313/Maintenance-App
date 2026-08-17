@@ -278,14 +278,14 @@ export default function CompatibilitySearch() {
 
         <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
           <button className="btn btn-secondary" onClick={() => setIsScrapModalOpen(true)}>
-            <PackageSearch size={20} /> إدارة مخزن التفصيخ
+            <PackageSearch size={18} /> إدارة مخزن التفصيخ
           </button>
           <label className="btn" style={{ background: 'var(--success-bg)', color: 'var(--success)', borderColor: 'var(--success-bg)', cursor: isImporting ? 'not-allowed' : 'pointer', margin: 0 }}>
-            <FileUp size={20} /> استيراد إكسل
+            <FileUp size={18} /> استيراد إكسل
             <input type="file" accept=".xlsx, .xls" style={{ display: 'none' }} onChange={handleFileUpload} disabled={isImporting} />
           </label>
           <button className="btn btn-primary" onClick={() => setIsModalOpen(true)}>
-            <Plus size={20} /> إضافة مكون
+            <Plus size={18} /> إضافة مكون
           </button>
         </div>
       </div>
