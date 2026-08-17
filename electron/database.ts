@@ -12,9 +12,9 @@ const dbPath = path.join(userDataPath, 'database.json');
 
 class SimpleDB {
   data: any = {
-    settings: { 
-      id: 1, 
-      base_capital: 0, 
+    settings: {
+      id: 1,
+      base_capital: 0,
       shop_name: 'مركز الصيانة',
       whatsapp_template: 'السلام عليكم [اسم_الزبون] 👋\nنود إعلامك بأن جهازك ([اسم_الجهاز]) قد تمت صيانته وهو جاهز للاستلام.\nالمبلغ المطلوب: [المبلغ]\nشكراً لاختيارك مركزنا! 🛠️✨',
       theme: 'dark'
@@ -236,11 +236,17 @@ class SimpleDB {
   save(): boolean {
     const tmpPath = dbPath + '.tmp';
     try {
-      fs.writeFileSync(tmpPath, JSON.stringify(this.data, null, 2));
+      fs.mkdirSync(path.dirname(dbPath), { recursive: true });
+      fs.writeFileSync(tmpPath, JSON.stringify(this.data, null, 2), 'utf8');
       fs.renameSync(tmpPath, dbPath);
       return true;
     } catch (err) {
       console.error('Failed to save database atomically', err);
+      try {
+        if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath);
+      } catch (cleanupError) {
+        console.error('Failed to clean temporary database file', cleanupError);
+      }
       return false;
     }
   }
