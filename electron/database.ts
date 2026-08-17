@@ -1,6 +1,7 @@
 import path from 'path';
-import { app } from 'electron';
+import { app, dialog } from 'electron';
 import fs from 'fs';
+import { findLatestValidBackup } from './backup.js';
 
 const isDev = !app.isPackaged;
 const dbPath = isDev 
@@ -32,7 +33,14 @@ class SimpleDB {
 
   load() {
     if (fs.existsSync(dbPath)) {
-      this.data = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
+      try {
+        this.data = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
+        if (!this.isUsableDatabasePayload(this.data)) {
+          throw new Error('DATABASE_INVALID_SCHEMA');
+        }
+      } catch {
+        this.recoverFromCorruptDatabase();
+      }
       
       // Migration: Ensure existing data has month_id and payment_status
       if (!this.data.months) this.data.months = [];
@@ -158,6 +166,94 @@ class SimpleDB {
       }];
       this.save();
     }
+  }
+
+  private isUsableDatabasePayload(data: any): boolean {
+    if (!data || typeof data !== 'object' || Array.isArray(data)) return false;
+    if (!data.settings || typeof data.settings !== 'object' || Array.isArray(data.settings)) return false;
+
+    const collectionFields = [
+      'months', 'technicians', 'operations', 'withdrawals',
+      'ic_compatibilities', 'scrap_devices', 'common_devices', 'common_faults'
+    ];
+    return collectionFields.every(field => data[field] === undefined || Array.isArray(data[field]));
+  }
+
+  private recoverFromCorruptDatabase() {
+    const diagnosticPath = this.preserveCorruptDatabase();
+    const userDataPath = process.env.TEST_USER_DATA || app.getPath('userData');
+    const recovery = findLatestValidBackup([
+      path.join(path.dirname(dbPath), 'backups_v2'),
+      path.join(userDataPath, 'backups_v2')
+    ]);
+
+    if (recovery) {
+      this.data = recovery.data;
+      const saved = this.save();
+      if (saved) {
+        this.showRecoveryMessage(
+          'تم اكتشاف تلف في قاعدة البيانات واستعادة آخر نسخة احتياطية صالحة تلقائيًا.',
+          diagnosticPath,
+          path.basename(recovery.sourcePath)
+        );
+        return;
+      }
+
+      // Keep using the validated data in memory if a disk write is temporarily unavailable.
+      this.showRecoveryMessage(
+        'تم اكتشاف تلف في قاعدة البيانات. وُجدت نسخة احتياطية صالحة لكن تعذر حفظ الاستعادة على القرص؛ تم فتحها مؤقتًا في الذاكرة.',
+        diagnosticPath,
+        path.basename(recovery.sourcePath)
+      );
+      return;
+    }
+
+    // The corrupt original has already been copied. Start from the safe seed without touching any other data files.
+    this.data = this.createSafeRecoveryData();
+    const saved = this.save();
+    this.showRecoveryMessage(
+      saved
+        ? 'تم اكتشاف تلف في قاعدة البيانات ولم توجد نسخة احتياطية صالحة. بدأ التطبيق ببيانات آمنة جديدة.'
+        : 'تم اكتشاف تلف في قاعدة البيانات ولم توجد نسخة احتياطية صالحة. تعذر أيضًا إنشاء قاعدة بيانات بديلة على القرص.',
+      diagnosticPath
+    );
+  }
+
+  private preserveCorruptDatabase(): string | null {
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const diagnosticPath = `${dbPath}.corrupt-${timestamp}`;
+    try {
+      fs.copyFileSync(dbPath, diagnosticPath, fs.constants.COPYFILE_EXCL);
+      return diagnosticPath;
+    } catch (error) {
+      console.error('Failed to preserve corrupt database for diagnostics', error);
+      return null;
+    }
+  }
+
+  private createSafeRecoveryData() {
+    const seedPath = path.join(app.getAppPath(), 'default_seed.json');
+    if (fs.existsSync(seedPath)) {
+      try {
+        return JSON.parse(fs.readFileSync(seedPath, 'utf8'));
+      } catch (error) {
+        console.error('Failed to parse default seed during database recovery', error);
+      }
+    }
+    return {
+      settings: { id: 1, base_capital: 0, shop_name: 'مركز الصيانة', theme: 'dark' },
+      months: [], technicians: [], operations: [], withdrawals: [],
+      ic_compatibilities: [], scrap_devices: [], common_devices: [], common_faults: []
+    };
+  }
+
+  private showRecoveryMessage(message: string, diagnosticPath: string | null, backupName?: string) {
+    const details = [
+      diagnosticPath ? `حُفظت نسخة تشخيصية: ${path.basename(diagnosticPath)}` : 'تعذر حفظ نسخة تشخيصية من الملف التالف.',
+      backupName ? `النسخة المستخدمة: ${backupName}` : ''
+    ].filter(Boolean).join('\n');
+    console.error('[Database Recovery]', message, details);
+    dialog.showErrorBox('استعادة قاعدة البيانات', `${message}\n\n${details}`);
   }
 
   save(): boolean {

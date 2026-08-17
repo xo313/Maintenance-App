@@ -13,7 +13,7 @@ export interface BackupMetadata {
   withdrawals_count: number;
 }
 
-const BACKUP_VERSION = 1;
+export const BACKUP_VERSION = 1;
 const MAX_BACKUPS = 30;
 
 function getBackupDir() {
@@ -50,17 +50,28 @@ export function getCanonicalDatabaseHash(database: any): string {
 
 export function validateSchema(data: any): boolean {
   if (!data || typeof data !== 'object') return false;
+  if (!data.settings || typeof data.settings !== 'object' || Array.isArray(data.settings)) return false;
   if (!Array.isArray(data.months)) return false;
   if (!Array.isArray(data.operations)) return false;
   if (!Array.isArray(data.technicians)) return false;
   if (!Array.isArray(data.withdrawals)) return false;
+
+  const isFiniteNumber = (value: any) => typeof value === 'number' && Number.isFinite(value);
+  const isObject = (value: any) => value !== null && typeof value === 'object' && !Array.isArray(value);
+  const hasValidOptionalNumber = (value: any, key: string) => value[key] === undefined || isFiniteNumber(value[key]);
+  const hasValidOptionalString = (value: any, key: string) => value[key] === undefined || typeof value[key] === 'string';
+  const hasValidOptionalNullableString = (value: any, key: string) => value[key] === undefined || value[key] === null || typeof value[key] === 'string';
+
+  if (!hasValidOptionalNumber(data.settings, 'id') ||
+      !hasValidOptionalNumber(data.settings, 'base_capital') ||
+      !hasValidOptionalString(data.settings, 'shop_name') ||
+      !hasValidOptionalString(data.settings, 'whatsapp_template')) return false;
   
   // Check duplicates
   const checkDuplicates = (arr: any[]) => {
     const ids = new Set();
     for (const item of arr) {
-      if (!item || typeof item !== 'object') return false;
-      if (item.id === undefined) return false;
+      if (!isObject(item) || !isFiniteNumber(item.id)) return false;
       if (ids.has(item.id)) return false;
       ids.add(item.id);
     }
@@ -72,15 +83,106 @@ export function validateSchema(data: any): boolean {
   if (!checkDuplicates(data.technicians)) return false;
   if (!checkDuplicates(data.withdrawals)) return false;
 
+  for (const month of data.months) {
+    if (!hasValidOptionalString(month, 'month_name') ||
+        !hasValidOptionalNumber(month, 'start_capital') ||
+        (month.is_closed !== undefined && typeof month.is_closed !== 'boolean') ||
+        !hasValidOptionalString(month, 'created_at') ||
+        !hasValidOptionalNullableString(month, 'closed_at')) return false;
+  }
+
+  for (const technician of data.technicians) {
+    if (!hasValidOptionalString(technician, 'name') ||
+        !hasValidOptionalNumber(technician, 'profit_percentage') ||
+        !hasValidOptionalNumber(technician, 'start_balance') ||
+        (technician.is_active !== undefined && typeof technician.is_active !== 'boolean')) return false;
+  }
+
   // Check finite numbers in operations
   for (const op of data.operations) {
-    if (op.cost !== undefined && !Number.isFinite(op.cost)) return false;
-    if (op.price !== undefined && !Number.isFinite(op.price)) return false;
-    if (op.shop_profit !== undefined && !Number.isFinite(op.shop_profit)) return false;
-    if (op.tech_profit !== undefined && !Number.isFinite(op.tech_profit)) return false;
+    if (!hasValidOptionalString(op, 'date') ||
+        !hasValidOptionalString(op, 'customer_name') ||
+        !hasValidOptionalString(op, 'customer_phone') ||
+        !hasValidOptionalString(op, 'device') ||
+        !hasValidOptionalNumber(op, 'cost') ||
+        !hasValidOptionalNumber(op, 'price') ||
+        !hasValidOptionalNumber(op, 'shop_profit') ||
+        !hasValidOptionalNumber(op, 'tech_profit') ||
+        !hasValidOptionalNumber(op, 'technician_id') ||
+        !hasValidOptionalNumber(op, 'month_id') ||
+        !hasValidOptionalNumber(op, 'paid_in_month_id') ||
+        !hasValidOptionalNullableString(op, 'paid_at')) return false;
+    if (op.faults !== undefined && (!Array.isArray(op.faults) || op.faults.some((fault: any) => typeof fault !== 'string'))) return false;
+    if (op.payment_status !== undefined && !['cash', 'debt'].includes(op.payment_status)) return false;
+    if (op.status !== undefined && !['under_maintenance', 'completed', 'delivered'].includes(op.status)) return false;
+  }
+
+  for (const withdrawal of data.withdrawals) {
+    if (!hasValidOptionalString(withdrawal, 'date') ||
+        !hasValidOptionalString(withdrawal, 'description') ||
+        !hasValidOptionalNumber(withdrawal, 'amount') ||
+        !hasValidOptionalNumber(withdrawal, 'month_id')) return false;
+    if (withdrawal.technician_id !== undefined && withdrawal.technician_id !== null && !isFiniteNumber(withdrawal.technician_id)) return false;
+    if (withdrawal.type !== undefined && !['shop_withdrawal', 'tech_withdrawal'].includes(withdrawal.type)) return false;
+  }
+
+  const optionalArrays = ['ic_compatibilities', 'scrap_devices', 'common_devices', 'common_faults'];
+  for (const field of optionalArrays) {
+    if (data[field] !== undefined && !Array.isArray(data[field])) return false;
   }
 
   return true;
+}
+
+interface ParsedBackup {
+  data: any;
+  fileHash?: string;
+  version: number;
+}
+
+function parseBackupPayload(payload: any): ParsedBackup {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    throw new Error('BACKUP_INVALID_JSON');
+  }
+
+  const isEnvelope = Object.prototype.hasOwnProperty.call(payload, 'database');
+  const database = isEnvelope ? payload.database : payload;
+  const version = isEnvelope ? payload.backup_version : 0;
+
+  // Raw database snapshots predate the backup envelope and remain supported.
+  if (isEnvelope) {
+    if (!Number.isInteger(version) || version < 1 || version > BACKUP_VERSION) {
+      throw new Error('BACKUP_UNSUPPORTED_VERSION');
+    }
+    if (typeof payload.created_at !== 'string' || payload.created_at.length === 0) {
+      throw new Error('BACKUP_INVALID_METADATA');
+    }
+    if (payload.database_hash !== undefined &&
+        (typeof payload.database_hash !== 'string' || !/^[a-f0-9]{64}$/i.test(payload.database_hash))) {
+      throw new Error('BACKUP_INVALID_HASH');
+    }
+  }
+
+  if (!validateSchema(database)) {
+    throw new Error('BACKUP_INVALID_SCHEMA');
+  }
+
+  const fileHash = isEnvelope ? payload.database_hash : undefined;
+  if (fileHash && getCanonicalDatabaseHash(database) !== fileHash) {
+    throw new Error('BACKUP_HASH_MISMATCH');
+  }
+
+  return { data: database, fileHash, version };
+}
+
+function readBackupFile(filepath: string): ParsedBackup {
+  let payload: any;
+  try {
+    payload = JSON.parse(fs.readFileSync(filepath, 'utf8'));
+  } catch {
+    throw new Error('BACKUP_INVALID_JSON');
+  }
+  return parseBackupPayload(payload);
 }
 
 export function createBackup(dbData: any, isManual: boolean = false): { success: boolean, reason?: string, error?: string, filename?: string } {
@@ -100,8 +202,13 @@ export function createBackup(dbData: any, isManual: boolean = false): { success:
     }
 
     const prefix = isManual ? 'ManualBackup' : 'AutoBackup';
-    const filename = `${prefix}_${timestamp}.json`;
-    const filepath = path.join(backupDir, filename);
+    let filename = `${prefix}_${timestamp}.json`;
+    let filepath = path.join(backupDir, filename);
+    let suffix = 1;
+    while (fs.existsSync(filepath)) {
+      filename = `${prefix}_${timestamp}_${suffix++}.json`;
+      filepath = path.join(backupDir, filename);
+    }
     const tmpFilepath = filepath + '.tmp';
 
     const backupContent = {
@@ -134,7 +241,7 @@ export function createBackup(dbData: any, isManual: boolean = false): { success:
     if (allAutoBackups.length > MAX_BACKUPS) {
       const toDelete = allAutoBackups.slice(MAX_BACKUPS);
       for (const old of toDelete) {
-        try { fs.unlinkSync(old.path); } catch (e) {}
+        try { fs.unlinkSync(old.path); } catch {}
       }
     }
 
@@ -156,8 +263,8 @@ export function listBackups(): BackupMetadata[] {
         const filepath = path.join(backupDir, file);
         const stats = fs.statSync(filepath);
         const content = JSON.parse(fs.readFileSync(filepath, 'utf8'));
-        
-        const db = content.database || content; // Handle backward compat if old backup is raw db
+        const parsed = parseBackupPayload(content);
+        const db = parsed.data;
         
         results.push({
           filename: file,
@@ -168,14 +275,14 @@ export function listBackups(): BackupMetadata[] {
           technicians_count: Array.isArray(db.technicians) ? db.technicians.length : 0,
           withdrawals_count: Array.isArray(db.withdrawals) ? db.withdrawals.length : 0,
         });
-      } catch (e) {
+      } catch {
         // Corrupt file, skip
       }
     }
     
     // Sort by created_at desc
     return results.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-  } catch (e) {
+  } catch {
     return [];
   }
 }
@@ -199,28 +306,40 @@ export function readBackup(filename: string): { data: any, fileHash?: string } {
 
   if (!fs.existsSync(filepath)) throw new Error('BACKUP_NOT_FOUND');
   
-  const raw = fs.readFileSync(filepath, 'utf8');
-  let data;
-  try {
-    data = JSON.parse(raw);
-  } catch (e) {
-    throw new Error('BACKUP_INVALID_JSON');
-  }
+  const parsed = readBackupFile(filepath);
+  return { data: parsed.data, fileHash: parsed.fileHash };
+}
 
-  const dbData = data.database || data; // backward compatibility
-  const fileHash = data.database_hash;
-  
-  if (!validateSchema(dbData)) {
-    throw new Error('BACKUP_INVALID_SCHEMA');
-  }
+export function findLatestValidBackup(backupDirectories: string[]): { data: any, sourcePath: string } | null {
+  const candidates: { path: string, modifiedAt: number }[] = [];
+  const seenDirectories = new Set<string>();
 
-  // Backup Integrity Validation
-  if (fileHash) {
-    const calculatedHash = getCanonicalDatabaseHash(dbData);
-    if (fileHash !== calculatedHash) {
-      throw new Error('BACKUP_HASH_MISMATCH');
+  for (const directory of backupDirectories) {
+    if (!directory) continue;
+    const resolvedDirectory = path.resolve(directory);
+    if (seenDirectories.has(resolvedDirectory) || !fs.existsSync(resolvedDirectory)) continue;
+    seenDirectories.add(resolvedDirectory);
+
+    try {
+      for (const name of fs.readdirSync(resolvedDirectory)) {
+        if (!name.endsWith('.json')) continue;
+        const filePath = path.join(resolvedDirectory, name);
+        const stats = fs.statSync(filePath);
+        if (stats.isFile()) candidates.push({ path: filePath, modifiedAt: stats.mtimeMs });
+      }
+    } catch (error) {
+      console.error('Failed to inspect backup directory', error);
     }
   }
-  
-  return { data: dbData, fileHash };
+
+  candidates.sort((a, b) => b.modifiedAt - a.modifiedAt);
+  for (const candidate of candidates) {
+    try {
+      return { data: readBackupFile(candidate.path).data, sourcePath: candidate.path };
+    } catch {
+      // A corrupt backup must never block trying older valid backups.
+    }
+  }
+
+  return null;
 }

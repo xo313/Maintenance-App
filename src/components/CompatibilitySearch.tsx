@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import * as xlsx from 'xlsx';
-import { Search, Plus, Edit, Trash2, Cpu, FileUp, ChevronRight, ChevronLeft, PackageSearch, Box } from 'lucide-react';
+import { Search, Plus, Edit, Trash2, Cpu, FileUp, ChevronRight, ChevronLeft, PackageSearch, Box, CheckCircle2 } from 'lucide-react';
 import type { IcCompatibility, ScrapDevice } from '../types';
 import { useDialog } from './ui/DialogProvider';
 
