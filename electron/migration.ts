@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { app, dialog } from 'electron';
-import { getCanonicalDatabaseHash, validateSchema } from './backup.js';
+import { getCanonicalDatabaseHash } from './backup.js';
 import { userDataPath } from './database.js';
 
 interface MigrationState {
@@ -21,48 +21,64 @@ const BACKUP_DIR = path.join(userDataPath, 'backups_v2');
 
 function getLegacyPaths(): string[] {
   const appData = app.getPath('appData');
-  // Add common legacy paths here
   return [
     path.join(appData, 'Maintenance App', 'database.json'),
     path.join(appData, 'maintenance_app', 'database.json'),
-    // Just in case portable
     path.join(process.cwd(), 'database.json')
   ];
 }
 
 function findLegacyDatabase(): string | null {
   for (const legacyPath of getLegacyPaths()) {
-    // Avoid returning the current path if they happen to match
     if (legacyPath.toLowerCase() === CURRENT_DB_PATH.toLowerCase()) continue;
-    
-    if (fs.existsSync(legacyPath)) {
-      return legacyPath;
-    }
+    if (fs.existsSync(legacyPath)) return legacyPath;
   }
   return null;
 }
 
-export function runAutomaticMigration(): boolean {
-  // 1. IDEMPOTENCY & CURRENT DB CHECK
-  if (fs.existsSync(CURRENT_DB_PATH)) {
-    console.log('[Migration] Current database exists. Skipping migration.');
-    return true; // Safe to proceed
+// Legacy databases intentionally use a looser schema than the current v2 backup schema.
+// database.ts performs the actual field-by-field normalization after the file is moved.
+function validateLegacyDatabase(data: any): boolean {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return false;
+  if (!data.settings || typeof data.settings !== 'object' || Array.isArray(data.settings)) return false;
+
+  const requiredCollections = ['months', 'technicians', 'operations', 'withdrawals'];
+  for (const field of requiredCollections) {
+    if (data[field] !== undefined && !Array.isArray(data[field])) return false;
   }
 
-  // 2. DETECT LEGACY
+  // A legacy database may omit newer collections. If present, they must still be arrays.
+  const optionalCollections = [
+    'ic_compatibilities',
+    'scrap_devices',
+    'common_devices',
+    'common_faults',
+    'customers'
+  ];
+  for (const field of optionalCollections) {
+    if (data[field] !== undefined && !Array.isArray(data[field])) return false;
+  }
+
+  return true;
+}
+
+export function runAutomaticMigration(): boolean {
+  if (fs.existsSync(CURRENT_DB_PATH)) {
+    console.log('[Migration] Current database exists. Skipping migration.');
+    return true;
+  }
+
   const legacyDbPath = findLegacyDatabase();
   if (!legacyDbPath) {
     console.log('[Migration] No legacy database found. Starting fresh.');
-    return true; // Fresh install
+    return true;
   }
 
   console.log(`[Migration] Legacy database found at: ${legacyDbPath}`);
-  
-  let legacyRaw: string;
+
   let legacyData: any;
-  
   try {
-    legacyRaw = fs.readFileSync(legacyDbPath, 'utf8');
+    const legacyRaw = fs.readFileSync(legacyDbPath, 'utf8');
     legacyData = JSON.parse(legacyRaw);
   } catch (e) {
     console.error('[Migration] Failed to read or parse legacy database.', e);
@@ -70,16 +86,14 @@ export function runAutomaticMigration(): boolean {
     return false;
   }
 
-  // 3. VALIDATE LEGACY DB
-  if (!validateSchema(legacyData)) {
-    console.error('[Migration] Legacy database schema is invalid.');
+  if (!validateLegacyDatabase(legacyData)) {
+    console.error('[Migration] Legacy database has an invalid basic structure.');
     showMigrationError('قاعدة البيانات القديمة تالفة أو غير متوافقة.\nتم الحفاظ على بياناتك الأصلية دون تغيير.');
     return false;
   }
 
   const sourceHash = getCanonicalDatabaseHash(legacyData);
 
-  // 4. AUTOMATIC BACKUP BEFORE MIGRATION
   if (!fs.existsSync(BACKUP_DIR)) {
     fs.mkdirSync(BACKUP_DIR, { recursive: true });
   }
@@ -100,72 +114,72 @@ export function runAutomaticMigration(): boolean {
       database: legacyData
     };
     fs.writeFileSync(backupFilePath, JSON.stringify(backupContent, null, 2), 'utf8');
+
+    const backupCheck = JSON.parse(fs.readFileSync(backupFilePath, 'utf8'));
+    if (getCanonicalDatabaseHash(backupCheck.database) !== sourceHash) {
+      throw new Error('Migration backup hash mismatch');
+    }
+
     console.log(`[Migration] Legacy backup created safely at: ${backupFilePath}`);
   } catch (e) {
     console.error('[Migration] Failed to create migration backup.', e);
+    try {
+      if (fs.existsSync(backupFilePath)) fs.unlinkSync(backupFilePath);
+    } catch {}
     showMigrationError('فشل إنشاء نسخة احتياطية من البيانات القديمة.\nتم إيقاف الترحيل لحماية بياناتك.');
     return false;
   }
 
-  // 5. ATOMIC MIGRATION
   const tmpPath = CURRENT_DB_PATH + '.migration.tmp';
   try {
-    // Write tmp
-    fs.writeFileSync(tmpPath, JSON.stringify(legacyData, null, 2), 'utf8');
-    
-    // Validate tmp
-    const tmpRaw = fs.readFileSync(tmpPath, 'utf8');
-    const tmpData = JSON.parse(tmpRaw);
-    const tmpHash = getCanonicalDatabaseHash(tmpData);
-    
-    if (tmpHash !== sourceHash) {
-      throw new Error('Hash mismatch after tmp write');
-    }
-
-    // Ensure directory exists for current db
     const currentDir = path.dirname(CURRENT_DB_PATH);
     if (!fs.existsSync(currentDir)) {
       fs.mkdirSync(currentDir, { recursive: true });
     }
 
-    // Atomic rename
+    fs.writeFileSync(tmpPath, JSON.stringify(legacyData, null, 2), 'utf8');
+
+    const tmpRaw = fs.readFileSync(tmpPath, 'utf8');
+    const tmpData = JSON.parse(tmpRaw);
+    const tmpHash = getCanonicalDatabaseHash(tmpData);
+    if (tmpHash !== sourceHash) {
+      throw new Error('Hash mismatch after tmp write');
+    }
+
     fs.renameSync(tmpPath, CURRENT_DB_PATH);
   } catch (e) {
     console.error('[Migration] Failed during atomic write/rename.', e);
     if (fs.existsSync(tmpPath)) {
-      try { fs.unlinkSync(tmpPath); } catch (e2) {}
+      try { fs.unlinkSync(tmpPath); } catch {}
     }
     showMigrationError('حدث خطأ أثناء نقل البيانات.\nالبيانات الأصلية ما زالت في أمان.');
     return false;
   }
 
-  // 6. VERIFY FINAL DATABASE
   let destinationHash = '';
   try {
     const finalRaw = fs.readFileSync(CURRENT_DB_PATH, 'utf8');
     const finalData = JSON.parse(finalRaw);
     destinationHash = getCanonicalDatabaseHash(finalData);
-    
+
     if (destinationHash !== sourceHash) {
       throw new Error('Final hash mismatch');
     }
   } catch (e) {
     console.error('[Migration] Final verification failed.', e);
-    // ROLLBACK
     if (fs.existsSync(CURRENT_DB_PATH)) {
-      try { fs.unlinkSync(CURRENT_DB_PATH); } catch (e2) {}
+      try { fs.unlinkSync(CURRENT_DB_PATH); } catch {}
     }
     showMigrationError('فشل التحقق من صحة البيانات بعد النقل.\nتم التراجع والبيانات الأصلية في أمان.');
     return false;
   }
 
-  // 7. MIGRATION MARKER
   const marker: MigrationState = {
     source: legacyDbPath,
     destination: CURRENT_DB_PATH,
     timestamp: new Date().toISOString(),
-    sourceHash: sourceHash,
-    destinationHash: destinationHash,
+    sourceHash,
+    destinationHash,
     appVersion: app.getVersion(),
     success: true,
     migrationVersion: 1
@@ -175,7 +189,6 @@ export function runAutomaticMigration(): boolean {
     fs.writeFileSync(MIGRATION_STATE_PATH, JSON.stringify(marker, null, 2), 'utf8');
   } catch (e) {
     console.error('[Migration] Failed to write migration state marker.', e);
-    // Not fatal, the DB was migrated successfully
   }
 
   console.log('[Migration] Migration completed successfully!');
