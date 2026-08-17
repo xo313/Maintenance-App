@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Home, Wrench, Wallet, Settings, Cpu, Activity, Menu, ChevronRight, ChevronLeft, Users } from 'lucide-react';
+import { Home, Wrench, Wallet, Settings, Activity, ChevronRight, ChevronLeft, Users, Menu, X } from 'lucide-react';
 import Dashboard from './components/Dashboard';
 import Operations from './components/Operations';
 import Withdrawals from './components/Withdrawals';
@@ -13,20 +13,16 @@ function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [shopName, setShopName] = useState('مركز الصيانة');
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [initialOperationsFilter, setInitialOperationsFilter] = useState<any>(null);
+  const [operationsMode, setOperationsMode] = useState<'list' | 'add'>('list');
 
   useEffect(() => {
     (window as any).api.getSettings().then((settings: any) => {
       if (settings?.shop_name) setShopName(settings.shop_name);
-      if (settings?.theme === 'light') {
-        document.documentElement.classList.add('light');
-      } else {
-        document.documentElement.classList.remove('light');
-      }
+      document.documentElement.classList.toggle('light', settings?.theme === 'light');
     });
   }, []);
-
-  const [operationsMode, setOperationsMode] = useState<'list' | 'add'>('list');
 
   const handleNavigate = (tab: string, filter?: any, mode: 'list' | 'add' = 'list') => {
     if (tab === 'operations') {
@@ -34,10 +30,11 @@ function App() {
       setOperationsMode(mode);
     }
     setActiveTab(tab);
+    setIsMobileMenuOpen(false);
   };
 
   const renderContent = () => {
-    switch(activeTab) {
+    switch (activeTab) {
       case 'dashboard': return <Dashboard onNavigate={handleNavigate} />;
       case 'operations': return <Operations initialFilter={initialOperationsFilter} initialMode={operationsMode} clearInitialFilter={() => setInitialOperationsFilter(null)} />;
       case 'customers': return <Customers />;
@@ -49,7 +46,7 @@ function App() {
   };
 
   const getPageTitle = () => {
-    switch(activeTab) {
+    switch (activeTab) {
       case 'dashboard': return 'لوحة التحكم';
       case 'operations': return 'العمليات والصيانة';
       case 'customers': return 'العملاء';
@@ -60,90 +57,56 @@ function App() {
     }
   };
 
+  const navItems = [
+    { id: 'dashboard', label: 'لوحة التحكم', icon: Home },
+    { id: 'operations', label: 'العمليات والصيانة', icon: Wrench },
+    { id: 'customers', label: 'العملاء', icon: Users },
+    { id: 'withdrawals', label: 'السحوبات والمصروفات', icon: Wallet },
+  ];
+
   return (
     <DialogProvider>
       <div className="app-container fade-in" dir="rtl">
-        {/* Sidebar */}
-        <div className={`sidebar ${isSidebarCollapsed ? 'collapsed' : 'expanded'}`}>
+        {isMobileMenuOpen && <div className="sidebar-backdrop" onClick={() => setIsMobileMenuOpen(false)} />}
+
+        <aside className={`sidebar ${isSidebarCollapsed ? 'collapsed' : 'expanded'} ${isMobileMenuOpen ? 'mobile-open' : ''}`}>
           <div className="sidebar-logo">
-            <div className="sidebar-logo-icon">
-              <Activity size={24} color="#fff" />
-            </div>
-            {!isSidebarCollapsed && <h1>{shopName}</h1>}
+            <div className="sidebar-logo-icon"><Activity size={24} /></div>
+            {!isSidebarCollapsed && <div className="sidebar-brand"><h1>{shopName}</h1><small>إدارة الصيانة</small></div>}
+            <button className="mobile-close" onClick={() => setIsMobileMenuOpen(false)} aria-label="إغلاق القائمة"><X size={20} /></button>
           </div>
-          
-          <button 
-            className="sidebar-toggle" 
-            onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
-            title={isSidebarCollapsed ? 'توسيع القائمة' : 'طي القائمة'}
-          >
+
+          <button className="sidebar-toggle" onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)} title={isSidebarCollapsed ? 'توسيع القائمة' : 'طي القائمة'} aria-label="تبديل القائمة">
             {isSidebarCollapsed ? <ChevronLeft size={20} /> : <ChevronRight size={20} />}
           </button>
-          
-          <div 
-            className={`nav-item ${activeTab === 'dashboard' ? 'active' : ''}`}
-            onClick={() => handleNavigate('dashboard')}
-            title={isSidebarCollapsed ? 'لوحة التحكم' : ''}
-          >
-            <Home size={20} />
-            {!isSidebarCollapsed && <span>لوحة التحكم</span>}
-          </div>
-          
-          <div 
-            className={`nav-item ${activeTab === 'operations' ? 'active' : ''}`}
-            onClick={() => handleNavigate('operations')}
-            title={isSidebarCollapsed ? 'العمليات والصيانة' : ''}
-          >
-            <Wrench size={20} />
-            {!isSidebarCollapsed && <span>العمليات والصيانة</span>}
-          </div>
-          
-          <div 
-            className={`nav-item ${activeTab === 'customers' ? 'active' : ''}`}
-            onClick={() => handleNavigate('customers')}
-            title={isSidebarCollapsed ? 'العملاء' : ''}
-          >
-            <Users size={20} />
-            {!isSidebarCollapsed && <span>العملاء</span>}
-          </div>
-          
-          <div 
-            className={`nav-item ${activeTab === 'withdrawals' ? 'active' : ''}`}
-            onClick={() => handleNavigate('withdrawals')}
-            title={isSidebarCollapsed ? 'السحوبات والمصروفات' : ''}
-          >
-            <Wallet size={20} />
-            {!isSidebarCollapsed && <span>السحوبات والمصروفات</span>}
-          </div>
 
-          {/* Compatibilities moved to Dashboard */}
-          
-          <div style={{ marginTop: 'auto', paddingTop: '1rem', borderTop: '1px solid var(--border)' }}>
-            <div 
-              className={`nav-item ${activeTab === 'settings' ? 'active' : ''}`} 
-              onClick={() => handleNavigate('settings')}
-              title={isSidebarCollapsed ? 'الإعدادات' : ''}
-            >
+          <nav className="sidebar-nav" aria-label="التنقل الرئيسي">
+            {navItems.map(({ id, label, icon: Icon }) => (
+              <button key={id} className={`nav-item ${activeTab === id ? 'active' : ''}`} onClick={() => handleNavigate(id)} title={isSidebarCollapsed ? label : undefined}>
+                <Icon size={20} />
+                {!isSidebarCollapsed && <span>{label}</span>}
+              </button>
+            ))}
+          </nav>
+
+          <div className="sidebar-footer">
+            <button className={`nav-item ${activeTab === 'settings' ? 'active' : ''}`} onClick={() => handleNavigate('settings')} title={isSidebarCollapsed ? 'الإعدادات' : undefined}>
               <Settings size={20} />
               {!isSidebarCollapsed && <span>الإعدادات</span>}
-            </div>
+            </button>
           </div>
-        </div>
+        </aside>
 
-        {/* Main Layout */}
         <div className="main-content">
-          {/* Header */}
           <header className="app-header">
-            <div className="header-title">{getPageTitle()}</div>
-            <div className="header-actions">
-              {/* Future actions can go here */}
+            <div className="header-leading">
+              <button className="mobile-menu-button" onClick={() => setIsMobileMenuOpen(true)} aria-label="فتح القائمة"><Menu size={22} /></button>
+              <div><div className="header-kicker">مركز الصيانة</div><div className="header-title">{getPageTitle()}</div></div>
             </div>
+            <div className="header-actions" />
           </header>
-          
-          {/* Page Content Container */}
-          <div className="page-container">
-            {renderContent()}
-          </div>
+
+          <main className="page-container">{renderContent()}</main>
         </div>
       </div>
     </DialogProvider>
