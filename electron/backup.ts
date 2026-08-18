@@ -2,7 +2,6 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { app } from 'electron';
-import { userDataPath } from './database.js';
 
 export interface BackupMetadata {
   filename: string;
@@ -18,7 +17,7 @@ export const BACKUP_VERSION = 1;
 const MAX_BACKUPS = 30;
 
 function getBackupDir() {
-  const currentDataPath = process.env.TEST_USER_DATA || userDataPath;
+  const currentDataPath = process.env.TEST_USER_DATA || (app && typeof app.getPath === 'function' ? app.getPath('userData') : path.join(process.cwd(), 'test_userData'));
   const dir = path.join(currentDataPath, 'backups_v2');
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
