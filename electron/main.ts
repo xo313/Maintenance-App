@@ -3,6 +3,7 @@ import { app, BrowserWindow, ipcMain, dialog } from 'electron';
 import path from 'node:path';
 import fs from 'node:fs';
 import { getDB, isIntegrityOk, closeDB } from './db/connection.js';
+import { runAutomaticMigration } from './db/migration.js';
 import { createSQLiteBackup, listSQLiteBackups, restoreSQLiteBackup } from './db/backup.js';
 import * as settingsRepo from './db/repositories/settingsRepo.js';
 import * as monthsRepo from './db/repositories/monthsRepo.js';
