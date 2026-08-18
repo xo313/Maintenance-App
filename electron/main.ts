@@ -2,11 +2,18 @@ import './pre-init.js';
 import { app, BrowserWindow, ipcMain, dialog } from 'electron';
 import path from 'node:path';
 import fs from 'node:fs';
-import * as xlsx from 'xlsx';
-import { db, initDB } from './database.js';
-import type { Operation, Withdrawal, Technician } from '../src/types';
-import { createBackup, listBackups, readBackup, getCanonicalDatabaseHash } from './backup.js';
-import { runAutomaticMigration } from './migration.js';
+import { getDB, isIntegrityOk, closeDB } from './db/connection.js';
+import { createSQLiteBackup, listSQLiteBackups, restoreSQLiteBackup } from './db/backup.js';
+import * as settingsRepo from './db/repositories/settingsRepo.js';
+import * as monthsRepo from './db/repositories/monthsRepo.js';
+import * as techniciansRepo from './db/repositories/techniciansRepo.js';
+import * as customersRepo from './db/repositories/customersRepo.js';
+import * as operationsRepo from './db/repositories/operationsRepo.js';
+import * as withdrawalsRepo from './db/repositories/withdrawalsRepo.js';
+import * as quickListsRepo from './db/repositories/quickListsRepo.js';
+import * as icRepo from './db/repositories/icRepo.js';
+import * as scrapRepo from './db/repositories/scrapRepo.js';
+import * as statsRepo from './db/repositories/statsRepo.js';
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -32,20 +39,27 @@ function createWindow() {
   mainWindow.setMenuBarVisibility(false);
   mainWindow.maximize();
 
-  // Run automatic migration from legacy paths if necessary
+  // Run automatic migration from legacy database.json if needed
   const migrationSuccess = runAutomaticMigration();
   if (!migrationSuccess) {
-    console.error('Migration failed. Halting application startup to prevent data loss.');
+    console.error('[Startup] Migration failed. Halting application to protect user data.');
     app.quit();
     return;
   }
 
-  initDB();
+  // Open SQLite database and verify integrity
+  const db = getDB();
+  if (!isIntegrityOk(db)) {
+    dialog.showErrorBox('خطأ في قاعدة البيانات', 'تم اكتشاف تلف في ملف قاعدة البيانات SQLite.');
+    app.quit();
+    return;
+  }
+
   setupIPC();
 
   // Run daily backup check on startup and every hour
-  createBackup(db.data, false);
-  setInterval(() => createBackup(db.data, false), 1000 * 60 * 60);
+  createSQLiteBackup(false);
+  setInterval(() => createSQLiteBackup(false), 1000 * 60 * 60);
 
   if (process.env.VITE_DEV_SERVER_URL) {
     mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL);
@@ -57,1514 +71,772 @@ function createWindow() {
 app.whenReady().then(createWindow);
 
 app.on('window-all-closed', () => {
+  closeDB();
   if (process.platform !== 'darwin') {
     app.quit();
   }
 });
 
-function getCurrentMonth() {
-  const m = db.data.months[db.data.months.length - 1];
-  if (!m) {
-    const nextMonthName = new Date().toLocaleDateString('ar-EG', { month: 'long', year: 'numeric' });
-    db.data.months.push({ 
-      id: 1, 
-      start_capital: 0, 
-      month_name: nextMonthName,
-      is_closed: false,
-      created_at: new Date().toISOString(),
-      closed_at: null
-    });
-    db.save();
-    return db.data.months[0];
-  }
-  return m;
-}
-
-function generateMonthId() {
-  if (!db.data.months || db.data.months.length === 0) return 1;
-  return Math.max(...db.data.months.map((m: any) => m.id)) + 1;
-}
-
-// Old autoBackupDaily logic replaced by centralized backup service
-
 function setupIPC() {
-  const getCurrentMonth = () => db.getCurrentMonth();
-
+  // Settings
   ipcMain.handle('get-settings', () => {
-    return db.data.settings;
+    return settingsRepo.getSettings();
   });
 
   ipcMain.handle('update-settings', (_, settings) => {
-    const oldSettings = { ...db.data.settings };
-    db.data.settings = { ...db.data.settings, ...settings };
-    if (!db.save()) {
-      db.data.settings = oldSettings;
-      db.load();
-      return { success: false, reason: 'DATABASE_SAVE_FAILED' };
-    }
-    return { success: true };
+    return settingsRepo.updateSettings(settings);
   });
 
   ipcMain.handle('restart-app', () => {
-    if (mainWindow) {
-      mainWindow.reload();
-    }
+    app.relaunch();
+    app.exit(0);
   });
 
   // Technicians
   ipcMain.handle('get-technicians', () => {
-    return db.data.technicians.filter((t: any) => t.is_active !== false);
+    return techniciansRepo.getTechnicians();
   });
 
   ipcMain.handle('add-technician', (_, name, profit_percentage) => {
-    const newId = Date.now();
-    const newTech = { id: newId, name, profit_percentage: Math.max(0, profit_percentage), is_active: true };
-    db.data.technicians.push(newTech);
-    if (!db.save()) {
-      db.data.technicians.pop();
-      db.load();
-      return { success: false, reason: 'DATABASE_SAVE_FAILED' };
-    }
-    return { success: true };
+    return techniciansRepo.addTechnician(name, profit_percentage);
   });
 
   ipcMain.handle('edit-technician', (_, id, name, profit_percentage) => {
-    const tech = db.data.technicians.find((t: any) => t.id === id);
-    if (tech) {
-      const oldName = tech.name;
-      const oldProfit = tech.profit_percentage;
-      tech.name = name;
-      tech.profit_percentage = Math.max(0, profit_percentage);
-      if (!db.save()) {
-        tech.name = oldName;
-        tech.profit_percentage = oldProfit;
-        db.load();
-        return { success: false, reason: 'DATABASE_SAVE_FAILED' };
-      }
-      return { success: true };
-    }
-    return { success: false, reason: 'NOT_FOUND' };
+    return techniciansRepo.editTechnician(id, name, profit_percentage);
   });
 
   ipcMain.handle('delete-technician', (_, id) => {
-    const tech = db.data.technicians.find((t: any) => t.id === id);
-    if (tech) {
-      const oldActive = tech.is_active;
-      tech.is_active = false;
-      if (!db.save()) {
-        tech.is_active = oldActive;
-        db.load();
-        return { success: false, reason: 'DATABASE_SAVE_FAILED' };
-      }
-      return { success: true };
-    }
-    return { success: false, reason: 'NOT_FOUND' };
+    return techniciansRepo.deleteTechnician(id);
   });
 
   // Customers
   ipcMain.handle('get-customers', () => {
-    const explicitCustomers = db.data.customers || [];
-    const operations = db.data.operations || [];
-    
-    const combined = [...explicitCustomers];
-    const existingPhones = new Set(explicitCustomers.map((c: any) => c.phone).filter(Boolean));
-    const existingNames = new Set(explicitCustomers.map((c: any) => c.name).filter(Boolean));
-    
-    // Reverse operations so we get the latest info for a customer
-    const reversedOps = [...operations].reverse();
-    
-    reversedOps.forEach((op: any) => {
-      const name = op.customer_name?.trim();
-      const phone = op.customer_phone?.trim();
-      
-      if (!name) return;
-      
-      const phoneExists = phone && existingPhones.has(phone);
-      const nameExists = existingNames.has(name);
-      
-      if (!phoneExists && !nameExists) {
-        // Generate a stable negative ID based on name/phone
-        const strToHash = `${name}-${phone || ''}`;
-        let hash = 0;
-        for (let i = 0; i < strToHash.length; i++) {
-          hash = (hash << 5) - hash + strToHash.charCodeAt(i);
-          hash |= 0;
-        }
-        const derivedId = -Math.abs(hash) || -Math.floor(Math.random() * 1000000);
-        
-        const newCust = {
-          id: derivedId,
-          name: name,
-          phone: phone || '',
-          notes: 'مستورد من العمليات القديمة',
-          created_at: op.date || new Date().toISOString(),
-          updated_at: op.date || new Date().toISOString()
-        };
-        
-        combined.push(newCust);
-        if (phone) existingPhones.add(phone);
-        existingNames.add(name);
-      }
-    });
-    
-    return combined;
+    return customersRepo.getCustomers();
   });
 
   ipcMain.handle('add-customer', (_, customer) => {
-    if (!db.data.customers) db.data.customers = [];
-    const newCustomer = {
-      id: Date.now(),
-      name: customer.name,
-      phone: customer.phone,
-      notes: customer.notes || '',
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString()
-    };
-    db.data.customers.unshift(newCustomer);
-    if (!db.save()) {
-      db.data.customers.shift();
-      db.load();
-      return { success: false, reason: 'DATABASE_SAVE_FAILED' };
-    }
-    return { success: true, id: newCustomer.id };
+    return customersRepo.addCustomer(customer);
   });
 
   ipcMain.handle('edit-customer', (_, id, updatedData) => {
-    if (!db.data.customers) db.data.customers = [];
-    const idx = db.data.customers.findIndex((c: any) => c.id === id);
-    if (idx !== -1) {
-      const oldCustomer = { ...db.data.customers[idx] };
-      db.data.customers[idx] = {
-        ...oldCustomer,
-        ...updatedData,
-        updated_at: new Date().toISOString()
-      };
-      if (!db.save()) {
-        db.data.customers[idx] = oldCustomer;
-        db.load();
-        return { success: false, reason: 'DATABASE_SAVE_FAILED' };
-      }
-      return { success: true };
-    } else if (id < 0) {
-      const newCustomer = {
-        id: id,
-        name: updatedData.name,
-        phone: updatedData.phone,
-        notes: updatedData.notes || '',
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      };
-      db.data.customers.unshift(newCustomer);
-      if (!db.save()) {
-        db.data.customers.shift();
-        db.load();
-        return { success: false, reason: 'DATABASE_SAVE_FAILED' };
-      }
-      return { success: true };
-    }
-    return { success: false, reason: 'NOT_FOUND' };
+    return customersRepo.editCustomer(id, updatedData);
   });
 
   ipcMain.handle('delete-customer', (_, id) => {
-    if (!db.data.customers) return { success: false, reason: 'NOT_FOUND' };
-    const idx = db.data.customers.findIndex((c: any) => c.id === id);
-    if (idx !== -1) {
-      const oldCustomer = db.data.customers[idx];
-      db.data.customers.splice(idx, 1);
-      if (!db.save()) {
-        db.data.customers.splice(idx, 0, oldCustomer);
-        db.load();
-        return { success: false, reason: 'DATABASE_SAVE_FAILED' };
-      }
-      return { success: true };
-    } else if (id < 0) {
-      return { success: false, reason: 'لا يمكن حذف عميل مستورد من العمليات القديمة مباشرة. قم بتعديل بياناته لحفظه كعميل منفصل أو احذف عملياته.' };
-    }
-    return { success: false, reason: 'NOT_FOUND' };
+    return customersRepo.deleteCustomer(id);
   });
 
   ipcMain.handle('get-customer-operations', (_, customerId, customerPhone) => {
-    return db.data.operations.filter((op: any) => 
-      op.customer_id === customerId || 
-      (customerPhone && op.customer_phone === customerPhone)
-    ).map((op: any) => {
-      const tech = db.data.technicians.find((t: any) => t.id === op.technician_id);
-      return { ...op, technician_name: tech ? tech.name : 'Unknown' };
-    }).reverse();
+    return operationsRepo.getCustomerOperations(customerId, customerPhone);
   });
-
-
-  function calculateProfits(price: number, cost: number, techPercentage: number) {
-    const netProfit = Math.max(0, price - cost);
-    const techProfit = Number((netProfit * techPercentage).toFixed(2));
-    const shopProfit = Number((netProfit - techProfit).toFixed(2));
-    return { techProfit, shopProfit };
-  }
 
   // Operations
   ipcMain.handle('get-operations', () => {
-    return db.data.operations
-      .filter((op: any) => op.month_id === getCurrentMonth().id)
-      .map((op: any) => {
-        const tech = db.data.technicians.find((t: any) => t.id === op.technician_id);
-        return { ...op, technician_name: tech ? tech.name : 'Unknown' };
-      }).reverse();
+    return operationsRepo.getOperations();
   });
 
   ipcMain.handle('get-all-operations', () => {
-    return db.data.operations.map((op: any) => {
-      const tech = db.data.technicians.find((t: any) => t.id === op.technician_id);
-      return { ...op, technician_name: tech ? tech.name : 'Unknown' };
-    }).reverse();
+    return operationsRepo.getAllOperations();
   });
 
   ipcMain.handle('add-operation', (_, op) => {
-    // Generate sequential ID, ignoring massive timestamp IDs
-    const validIds = db.data.operations.map((o: any) => o.id).filter((id: number) => id < 100000000000);
-    const maxId = validIds.length > 0 ? Math.max(...validIds) : 0;
-    let newId = maxId + 1;
-    while (db.data.operations.some((o: any) => o.id === newId)) {
-      newId++;
-    }
-    
-    // Validate Technician
-    const techExists = db.data.technicians.find((t: any) => t.id === op.technician_id);
-    if (!techExists) {
-      return { success: false, reason: 'UNKNOWN_TECHNICIAN' };
-    }
-
-    // Strict Validation
-    op.price = Number(op.price) || 0;
-    op.cost = Number(op.cost) || 0;
-    if (op.price < 0) op.price = 0;
-    if (op.cost < 0) op.cost = 0;
-    
-    op.paid_amount = Number(op.paid_amount);
-    if (isNaN(op.paid_amount) || op.paid_amount < 0) op.paid_amount = 0;
-    if (op.paid_amount > op.price) op.paid_amount = op.price;
-
-    if (op.warranty_enabled) {
-      op.warranty_days = Number(op.warranty_days) || 0;
-      if (op.warranty_days > 0) {
-        const dateObj = new Date();
-        dateObj.setDate(dateObj.getDate() + op.warranty_days);
-        op.warranty_expiry_date = dateObj.toLocaleDateString('en-GB');
-      } else {
-        op.warranty_enabled = false;
-        delete op.warranty_days;
-        delete op.warranty_note;
-        delete op.warranty_expiry_date;
-      }
-    } else {
-      delete op.warranty_days;
-      delete op.warranty_note;
-      delete op.warranty_expiry_date;
-    }
-    
-    // Validate enums
-    if (op.status && !['under_maintenance', 'completed', 'delivered', 'cancelled'].includes(op.status)) {
-      op.status = 'under_maintenance';
-    }
-    
-    // Auto-calculate payment_status based on paid_amount
-    if (op.paid_amount >= op.price) {
-      op.payment_status = 'cash';
-    } else if (op.paid_amount > 0) {
-      op.payment_status = 'partial';
-    } else {
-      op.payment_status = 'debt';
-    }
-    // Calculate profits backend-side
-    const techPercentage = Number(techExists.profit_percentage) || 0;
-    const { techProfit, shopProfit } = calculateProfits(op.price, op.cost, techPercentage);
-    
-    // Auto-create customer if missing
-    if (!db.data.customers) db.data.customers = [];
-    if (op.customer_name) {
-      const existing = db.data.customers.find((c: any) => 
-        c.name === op.customer_name || (c.phone && c.phone === op.customer_phone)
-      );
-      if (existing) {
-        op.customer_id = existing.id;
-      } else {
-        const newCustomer = {
-          id: Date.now() + Math.floor(Math.random() * 10000),
-          name: op.customer_name,
-          phone: op.customer_phone || '',
-          notes: '',
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        };
-        db.data.customers.push(newCustomer);
-        op.customer_id = newCustomer.id;
-      }
-    }
-
-    const newOp = {
-      id: newId,
-      date: new Date().toLocaleDateString('en-GB'),
-      month_id: getCurrentMonth().id,
-      ...op,
-      tech_profit_percentage: techPercentage,
-      tech_profit: techProfit,
-      shop_profit: shopProfit
-    };
-    db.data.operations.push(newOp);
-    
-    if (!db.save()) {
-      db.data.operations.pop();
-      db.load();
-      return { success: false, reason: 'DATABASE_SAVE_FAILED' };
-    }
-    return { success: true };
+    return operationsRepo.addOperation(op);
   });
 
   ipcMain.handle('edit-operation', (_, opId, updatedOp) => {
-    const idx = db.data.operations.findIndex((o:any) => o.id === opId);
-    if (idx !== -1) {
-      // Prevent retroactive edits
-      if (db.data.operations[idx].month_id !== getCurrentMonth().id) {
-        return { success: false, reason: 'CANNOT_EDIT_PAST_MONTH' };
-      }
-      
-      // Validate Technician
-      if (updatedOp.technician_id) {
-        const techExists = db.data.technicians.find((t: any) => t.id === updatedOp.technician_id);
-        if (!techExists) {
-          return { success: false, reason: 'UNKNOWN_TECHNICIAN' };
-        }
-      }
-
-      // Strict Validation
-      updatedOp.price = Number(updatedOp.price) || 0;
-      updatedOp.cost = Number(updatedOp.cost) || 0;
-      if (updatedOp.price < 0) updatedOp.price = 0;
-      if (updatedOp.cost < 0) updatedOp.cost = 0;
-      
-      if (updatedOp.paid_amount !== undefined) {
-        updatedOp.paid_amount = Number(updatedOp.paid_amount) || 0;
-        if (updatedOp.paid_amount < 0) updatedOp.paid_amount = 0;
-        if (updatedOp.paid_amount > updatedOp.price) updatedOp.paid_amount = updatedOp.price;
-      }
-
-      if (updatedOp.warranty_enabled !== undefined) {
-        if (updatedOp.warranty_enabled) {
-          updatedOp.warranty_days = Number(updatedOp.warranty_days) || 0;
-          if (updatedOp.warranty_days > 0) {
-            const [day, month, year] = db.data.operations[idx].date.split('/');
-            const baseDate = new Date(Number(year), Number(month) - 1, Number(day));
-            baseDate.setDate(baseDate.getDate() + updatedOp.warranty_days);
-            updatedOp.warranty_expiry_date = baseDate.toLocaleDateString('en-GB');
-          } else {
-            updatedOp.warranty_enabled = false;
-            updatedOp.warranty_days = undefined;
-            updatedOp.warranty_note = undefined;
-            updatedOp.warranty_expiry_date = undefined;
-          }
-        } else {
-          updatedOp.warranty_days = undefined;
-          updatedOp.warranty_note = undefined;
-          updatedOp.warranty_expiry_date = undefined;
-        }
-      }
-      
-      if (updatedOp.status && !['under_maintenance', 'completed', 'delivered', 'cancelled'].includes(updatedOp.status)) {
-        updatedOp.status = 'under_maintenance';
-      }
-
-      // Re-calculate payment_status if paid_amount or price changed
-      const priceToUse = updatedOp.price !== undefined ? updatedOp.price : db.data.operations[idx].price;
-      const paidAmountToUse = updatedOp.paid_amount !== undefined ? updatedOp.paid_amount : (db.data.operations[idx].paid_amount ?? (db.data.operations[idx].payment_status === 'cash' ? db.data.operations[idx].price : 0));
-      
-      if (paidAmountToUse >= priceToUse) {
-        updatedOp.payment_status = 'cash';
-      } else if (paidAmountToUse > 0) {
-        updatedOp.payment_status = 'partial';
-      } else {
-        updatedOp.payment_status = 'debt';
-      }
-      
-      const oldOp = { ...db.data.operations[idx] };
-      // Protect immutable fields from being overwritten by spread
-      delete updatedOp.id;
-      delete updatedOp.month_id;
-      delete updatedOp.created_at;
-      delete updatedOp.paid_in_month_id;
-      delete updatedOp.paid_at;
-      
-      // Do not trust profit values from frontend
-      delete updatedOp.shop_profit;
-      delete updatedOp.tech_profit;
-      delete updatedOp.tech_profit_percentage;
-
-      if (updatedOp.technician_id !== undefined && updatedOp.technician_id !== oldOp.technician_id) {
-        return { success: false, reason: 'TECHNICIAN_CHANGE_NOT_ALLOWED' };
-      }
-
-      let isFinancialEdit = false;
-
-      if (updatedOp.price !== undefined && updatedOp.price !== oldOp.price) isFinancialEdit = true;
-      if (updatedOp.cost !== undefined && updatedOp.cost !== oldOp.cost) isFinancialEdit = true;
-
-      const mergedOp = { ...oldOp, ...updatedOp };
-
-      if (isFinancialEdit) {
-        let techPercentageToUse = oldOp.tech_profit_percentage;
-
-        if (techPercentageToUse === undefined) {
-           const techExists = db.data.technicians.find((t: any) => t.id === mergedOp.technician_id);
-           techPercentageToUse = Number(techExists?.profit_percentage) || 0;
-           mergedOp.tech_profit_percentage = techPercentageToUse;
-        }
-
-        const { techProfit, shopProfit } = calculateProfits(mergedOp.price, mergedOp.cost, techPercentageToUse);
-        mergedOp.tech_profit = techProfit;
-        mergedOp.shop_profit = shopProfit;
-      }
-
-      if (mergedOp.customer_name) {
-        if (!db.data.customers) db.data.customers = [];
-        const existing = db.data.customers.find((c: any) => 
-          c.name === mergedOp.customer_name || (c.phone && c.phone === mergedOp.customer_phone)
-        );
-        if (existing) {
-          mergedOp.customer_id = existing.id;
-        } else {
-          const newCustomer = {
-            id: Date.now() + Math.floor(Math.random() * 10000),
-            name: mergedOp.customer_name,
-            phone: mergedOp.customer_phone || '',
-            notes: '',
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
-          };
-          db.data.customers.push(newCustomer);
-          mergedOp.customer_id = newCustomer.id;
-        }
-      }
-
-      db.data.operations[idx] = mergedOp;
-      if (!db.save()) {
-        db.data.operations[idx] = oldOp;
-        db.load();
-        return { success: false, reason: 'DATABASE_SAVE_FAILED' };
-      }
-      return { success: true };
-    }
-    return { success: false, reason: 'NOT_FOUND' };
+    return operationsRepo.editOperation(opId, updatedOp);
   });
 
   ipcMain.handle('delete-operation', (_, opId) => {
-    const idx = db.data.operations.findIndex((o: any) => o.id === opId);
-    if (idx !== -1) {
-      // Prevent retroactive deletion
-      if (db.data.operations[idx].month_id !== getCurrentMonth().id) {
-        return { success: false, reason: 'CANNOT_DELETE_PAST_MONTH' };
-      }
-      const removed = db.data.operations[idx];
-      db.data.operations.splice(idx, 1);
-      if (!db.save()) {
-        db.data.operations.splice(idx, 0, removed);
-        db.load();
-        return { success: false, reason: 'DATABASE_SAVE_FAILED' };
-      }
-      return { success: true };
-    }
-    return { success: false, reason: 'NOT_FOUND' };
+    return operationsRepo.deleteOperation(opId);
   });
 
   // Debts
   ipcMain.handle('get-debts', () => {
-    return db.data.operations
-      .filter((op: any) => op.payment_status === 'debt' || op.payment_status === 'partial')
-      .map((op: any) => {
-        const tech = db.data.technicians.find((t: any) => t.id === op.technician_id);
-        return { ...op, technician_name: tech ? tech.name : 'Unknown' };
-      }).reverse();
+    return operationsRepo.getDebts();
   });
 
   ipcMain.handle('pay-debt', (_, operation_id) => {
-    const op = db.data.operations.find((o: any) => o.id === operation_id);
-    if (op) {
-      if (op.payment_status === 'cash') {
-        return { success: false, reason: 'DEBT_ALREADY_PAID' };
-      }
-      
-      const oldStatus = op.payment_status;
-      const oldPaidInMonth = op.paid_in_month_id;
-      const oldPaidAt = op.paid_at;
-      const oldPaidAmount = op.paid_amount;
-
-      op.payment_status = 'cash';
-      op.paid_in_month_id = getCurrentMonth().id;
-      op.paid_at = new Date().toISOString();
-      op.paid_amount = op.price;
-      
-      if (!db.save()) {
-        op.payment_status = oldStatus;
-        op.paid_in_month_id = oldPaidInMonth;
-        op.paid_at = oldPaidAt;
-        op.paid_amount = oldPaidAmount;
-        db.load();
-        return { success: false, reason: 'DATABASE_SAVE_FAILED' };
-      }
-      return { success: true };
-    }
-    return { success: false, reason: 'NOT_FOUND' };
+    return operationsRepo.payDebt(operation_id);
   });
 
   // Withdrawals
   ipcMain.handle('get-withdrawals', () => {
-    return db.data.withdrawals.map((w: any) => {
-      const tech = db.data.technicians.find((t: any) => t.id === w.technician_id);
-      return { ...w, technician_name: tech ? tech.name : null };
-    }).reverse();
+    return withdrawalsRepo.getWithdrawals();
   });
 
   ipcMain.handle('add-withdrawal', (_, w) => {
-    const newId = Date.now();
-    
-    // Sanitize and Validate
-    if (typeof w.amount !== 'number' || !Number.isFinite(w.amount)) {
-      w.amount = Number(w.amount) || 0;
-    }
-    if (w.amount < 0) w.amount = 0;
-    
-    if (!['shop_withdrawal', 'tech_withdrawal'].includes(w.type)) {
-      w.type = 'shop_withdrawal';
-    }
-
-    if (w.type === 'tech_withdrawal') {
-      const techExists = db.data.technicians.find((t: any) => t.id === w.technician_id);
-      if (!techExists) {
-        return { success: false, reason: 'UNKNOWN_TECHNICIAN' };
-      }
-    }
-    
-    const newWithdrawal = {
-      id: newId,
-      date: new Date().toLocaleDateString('en-GB'),
-      month_id: getCurrentMonth().id,
-      ...w
-    };
-    db.data.withdrawals.push(newWithdrawal);
-    if (!db.save()) {
-      db.data.withdrawals.pop();
-      db.load();
-      return { success: false, reason: 'DATABASE_SAVE_FAILED' };
-    }
-    return { success: true };
+    return withdrawalsRepo.addWithdrawal(w);
   });
 
   ipcMain.handle('edit-withdrawal', (_, id, updatedW) => {
-    const idx = db.data.withdrawals.findIndex((w: any) => w.id === id);
-    if (idx !== -1) {
-      if (db.data.withdrawals[idx].month_id !== getCurrentMonth().id) {
-        return { success: false, reason: 'CANNOT_EDIT_PAST_MONTH' };
-      }
-      
-      if (typeof updatedW.amount !== 'undefined') {
-        updatedW.amount = Math.max(0, Number(updatedW.amount) || 0);
-      }
-      
-      const oldW = { ...db.data.withdrawals[idx] };
-      delete updatedW.id;
-      delete updatedW.month_id;
-      delete updatedW.date;
-      
-      db.data.withdrawals[idx] = { ...oldW, ...updatedW };
-      
-      if (!db.save()) {
-        db.data.withdrawals[idx] = oldW;
-        db.load();
-        return { success: false, reason: 'DATABASE_SAVE_FAILED' };
-      }
-      return { success: true };
-    }
-    return { success: false, reason: 'NOT_FOUND' };
+    return withdrawalsRepo.editWithdrawal(id, updatedW);
   });
 
   ipcMain.handle('delete-withdrawal', (_, id) => {
-    const idx = db.data.withdrawals.findIndex((w: any) => w.id === id);
-    if (idx !== -1) {
-      if (db.data.withdrawals[idx].month_id !== getCurrentMonth().id) {
-        return { success: false, reason: 'CANNOT_DELETE_PAST_MONTH' };
-      }
-      const removed = db.data.withdrawals[idx];
-      db.data.withdrawals.splice(idx, 1);
-      if (!db.save()) {
-        db.data.withdrawals.splice(idx, 0, removed);
-        db.load();
-        return { success: false, reason: 'DATABASE_SAVE_FAILED' };
-      }
-      return { success: true };
-    }
-    return { success: false, reason: 'NOT_FOUND' };
+    return withdrawalsRepo.deleteWithdrawal(id);
   });
 
-  // Dashboard Stats
+  // Stats
   ipcMain.handle('get-dashboard-stats', () => {
-    const currentMonth = getCurrentMonth();
-
-    // Profit of the current month
-    const currentMonthOps = db.data.operations.filter((op: any) => op.month_id === currentMonth.id);
-    const deliveredOps = currentMonthOps.filter((op: any) => op.status === 'delivered');
-
-    // Total profit ONLY for delivered operations
-    const totalProfit = deliveredOps.reduce((sum: number, op: any) => sum + ((op.price || 0) - (op.cost || 0)), 0);
-
-    // Helper to get paid amount with fallback for older operations
-    const getPaidAmount = (op: any) => op.paid_amount ?? (op.payment_status === 'cash' ? (op.price || 0) : 0);
-    const getRemainingAmount = (op: any) => Math.max(0, (op.price || 0) - getPaidAmount(op));
-
-    // Realized vs Unrealized (Cash is recorded when received, regardless of device status)
-    const cashOps = currentMonthOps.filter((op: any) => !op.paid_in_month_id);
-    const paidDebts = db.data.operations.filter((op: any) => op.paid_in_month_id === currentMonth.id);
-    const unpaidDebts = db.data.operations.filter((op: any) => getRemainingAmount(op) > 0);
-
-    const totalCashReceived = cashOps.reduce((sum: number, op: any) => sum + getPaidAmount(op), 0) +
-      paidDebts.reduce((sum: number, op: any) => sum + getRemainingAmount(op), 0);
-
-    // Cost of ALL operations created this month is deducted from the drawer (as parts are bought with cash)
-    const totalOpsCost = currentMonthOps.reduce((sum: number, op: any) => sum + (op.cost || 0), 0);
-
-    // Withdrawals (ALL withdrawals in the current month)
-    const currentMonthWithdrawals = db.data.withdrawals.filter((w: any) => w.month_id === currentMonth.id);
-    const totalWithdrawals = currentMonthWithdrawals.reduce((sum: number, w: any) => sum + (w.amount || 0), 0);
-
-    // EXACT EQUATIONS FROM USER:
-    // 1. cashBox = start_capital + totalCashReceived - totalOpsCost - totalWithdrawals
-    const cashBox = currentMonth.start_capital + totalCashReceived - totalOpsCost - totalWithdrawals;
-
-    // 3. debtTotal = sum of remaining amounts across ALL months
-    const allDebts = db.data.operations.filter((op: any) => op.payment_status === 'debt' || op.payment_status === 'partial');
-    const debtTotal = allDebts.reduce((sum: number, op: any) => sum + getRemainingAmount(op), 0);
-
-    // New metrics for Reports Card
-    const totalTechProfit = deliveredOps.reduce((sum: number, op: any) => sum + (op.tech_profit || 0), 0);
-    const totalShopProfit = deliveredOps.reduce((sum: number, op: any) => sum + (op.shop_profit || 0), 0);
-    
-    const uncollectedOps = currentMonthOps.filter((op: any) => op.status !== 'delivered');
-    const uncollectedProfit = uncollectedOps.reduce((sum: number, op: any) => sum + ((op.price || 0) - (op.cost || 0)), 0);
-    
-    const receivedDevicesCount = currentMonthOps.length;
-
-    return {
-      cashBox,
-      totalProfit,
-      debtTotal,
-      totalWithdrawals,
-      
-      // New Stats for Reports Card
-      totalTechProfit,
-      totalShopProfit,
-      uncollectedProfit,
-      receivedDevicesCount,
-      
-      // For compatibility if modal still uses them:
-      baseCapital: currentMonth.start_capital,
-      tiedCapital: unpaidDebts.reduce((sum: number, op: any) => sum + (op.cost || 0), 0),
-      availableCapital: currentMonth.start_capital - unpaidDebts.reduce((sum: number, op: any) => sum + (op.cost || 0), 0),
-      realizedShopProfit: cashOps.reduce((sum: number, op: any) => sum + (op.shop_profit || 0), 0) + paidDebts.reduce((sum: number, op: any) => sum + (op.shop_profit || 0), 0),
-      totalShopWithdrawal: currentMonthWithdrawals.filter((w: any) => w.type === 'shop_withdrawal').reduce((sum: number, w: any) => sum + (w.amount || 0), 0),
-      shopDue: (currentMonth.start_capital - unpaidDebts.reduce((sum: number, op: any) => sum + (op.cost || 0), 0)) + deliveredOps.reduce((sum: number, op: any) => sum + (op.shop_profit || 0), 0)
-    };
+    return statsRepo.getDashboardStats();
   });
 
-  // Technician Stats
   ipcMain.handle('get-technician-stats', () => {
-    const currentMonth = getCurrentMonth();
-
-    return db.data.technicians
-      .map((tech: any) => {
-        const techOpsThisMonth = db.data.operations.filter((op: any) => op.technician_id === tech.id && op.month_id === currentMonth.id);
-        const totalCost = techOpsThisMonth.reduce((sum: number, op: any) => sum + (op.cost || 0), 0);
-
-        const cashOps = techOpsThisMonth.filter((op: any) => op.payment_status === 'cash' && !op.paid_in_month_id);
-        const paidDebts = db.data.operations.filter((op: any) => op.technician_id === tech.id && op.paid_in_month_id === currentMonth.id);
-
-        const realizedProfit = cashOps.reduce((sum: number, op: any) => sum + (op.tech_profit || 0), 0) +
-          paidDebts.reduce((sum: number, op: any) => sum + (op.tech_profit || 0), 0);
-
-        const unpaidDebts = db.data.operations.filter((op: any) => op.technician_id === tech.id && (op.payment_status === 'debt' || op.payment_status === 'partial'));
-        const unrealizedProfit = unpaidDebts.reduce((sum: number, op: any) => sum + (op.tech_profit || 0), 0);
-
-        const techWithdrawal = db.data.withdrawals
-          .filter((w: any) => w.type === 'tech_withdrawal' && w.technician_id === tech.id && w.month_id === currentMonth.id)
-          .reduce((sum: number, w: any) => sum + (w.amount || 0), 0);
-
-        return {
-          id: tech.id,
-          name: tech.name,
-          profit_percentage: tech.profit_percentage,
-          is_active: tech.is_active,
-          totalCost,
-          totalProfit: realizedProfit,
-          unrealizedProfit: unrealizedProfit,
-          totalWithdrawal: techWithdrawal,
-          remainingBalance: realizedProfit - techWithdrawal
-        };
-      });
+    return statsRepo.getTechnicianStats();
   });
 
-  // IC Compatibilities
+  // IC Compatibility
   ipcMain.handle('get-ic-compatibilities', () => {
-    return db.data.ic_compatibilities || [];
+    return icRepo.getIcCompatibilities();
   });
 
   ipcMain.handle('add-ic-compatibility', (_, ic) => {
-    const newIc = { ...ic, id: Date.now() };
-    if (!db.data.ic_compatibilities) db.data.ic_compatibilities = [];
-    db.data.ic_compatibilities.unshift(newIc);
-    if (!db.save()) {
-      db.data.ic_compatibilities.shift();
-      db.load();
-      return { success: false, reason: 'DATABASE_SAVE_FAILED' };
-    }
-    return { success: true };
+    return icRepo.addIcCompatibility(ic);
   });
 
   ipcMain.handle('edit-ic-compatibility', (_, id, ic) => {
-    const idx = db.data.ic_compatibilities.findIndex((i: any) => i.id === id);
-    if (idx !== -1) {
-      const oldIc = { ...db.data.ic_compatibilities[idx] };
-      db.data.ic_compatibilities[idx] = { ...oldIc, ...ic };
-      if (!db.save()) {
-        db.data.ic_compatibilities[idx] = oldIc;
-        db.load();
-        return { success: false, reason: 'DATABASE_SAVE_FAILED' };
-      }
-      return { success: true };
-    }
-    return { success: false, reason: 'NOT_FOUND' };
+    return icRepo.editIcCompatibility(id, ic);
   });
 
   ipcMain.handle('delete-ic-compatibility', (_, id) => {
-    const idx = db.data.ic_compatibilities.findIndex((i: any) => i.id === id);
-    if (idx !== -1) {
-      const removed = db.data.ic_compatibilities[idx];
-      db.data.ic_compatibilities.splice(idx, 1);
-      if (!db.save()) {
-        db.data.ic_compatibilities.splice(idx, 0, removed);
-        db.load();
-        return { success: false, reason: 'DATABASE_SAVE_FAILED' };
-      }
-      return { success: true };
-    }
-    return { success: false, reason: 'NOT_FOUND' };
-  });
-
-  ipcMain.handle('import-operations-excel-data', async (_, data: any[]) => {
-    try {
-      let added = 0;
-      let ignored = 0;
-      const currentMonth = getCurrentMonth();
-      let currentTimestamp = Date.now();
-
-      for (let i = 1; i < data.length; i++) {
-        const row = data[i] as any[];
-        if (!row || row.length < 3) continue;
-
-        const date = row[0] ? String(row[0]).trim() : new Date().toLocaleDateString('en-GB');
-        const opId = row[1] ? Number(row[1]) : null;
-        const customerName = String(row[2] || '').trim();
-        const device = String(row[3] || '').trim();
-
-        const techName = String(row[10] || '').trim();
-        let tech = db.data.technicians.find((t: any) => t.name === techName);
-        if (!tech) {
-          ignored++;
-          continue; // P0-5: reject unknown technician
-        }
-        let techId = tech.id;
-
-        const isDuplicate = db.data.operations.some((op: any) =>
-          (opId && op.id === opId) ||
-          (op.customer_name === customerName && op.device === device && op.date === date)
-        );
-
-        if (isDuplicate) {
-          ignored++;
-          continue;
-        }
-
-        const safeId = (opId && !db.data.operations.some((o:any)=>o.id === opId)) ? opId : currentTimestamp++;
-
-        db.data.operations.push({
-          id: safeId,
-          date: date,
-          month_id: currentMonth.id,
-          customer_name: customerName,
-          device: device,
-          status: 'delivered', // Added default status
-          payment_status: String(row[4]).includes('دين') ? 'debt' : 'cash',
-          cost: Math.max(0, Number(row[5]) || 0),
-          price: Math.max(0, Number(row[6]) || 0),
-          shop_profit: Math.max(0, Number(row[8]) || 0),
-          tech_profit: Math.max(0, Number(row[9]) || 0),
-          technician_id: techId
-        });
-        added++;
-      }
-
-      if (added > 0) {
-        if (!db.save()) {
-          db.data.operations = db.data.operations.slice(0, db.data.operations.length - added);
-          db.load();
-          return { success: false, reason: 'DATABASE_SAVE_FAILED' };
-        }
-      }
-      return { success: true, added, ignored };
-    } catch (err: any) {
-      return { success: false, reason: 'error', message: err.message };
-    }
-  });
-  ipcMain.handle('import-operations-excel', async () => {
-    const { canceled, filePaths } = await dialog.showOpenDialog({
-      title: 'استيراد ملف إكسل للعمليات',
-      properties: ['openFile'],
-      filters: [{ name: 'Excel Files', extensions: ['xlsx', 'xls'] }]
-    });
-
-    if (canceled || filePaths.length === 0) {
-      return { success: false, reason: 'cancelled' };
-    }
-
-    try {
-      const workbook = xlsx.readFile(filePaths[0]);
-      const sheetName = workbook.SheetNames[0];
-      const worksheet = workbook.Sheets[sheetName];
-      const data = xlsx.utils.sheet_to_json(worksheet, { header: 1 });
-
-      let added = 0;
-      let ignored = 0;
-      const currentMonth = getCurrentMonth();
-      let currentTimestamp = Date.now();
-
-      for (let i = 1; i < data.length; i++) {
-        const row = data[i] as any[];
-        if (!row || row.length < 3) continue;
-
-        const date = row[0] ? String(row[0]).trim() : new Date().toLocaleDateString('en-GB');
-        const opId = row[1] ? Number(row[1]) : null;
-        const customerName = String(row[2] || '').trim();
-        const device = String(row[3] || '').trim();
-
-        const techName = String(row[10] || '').trim();
-        let tech = db.data.technicians.find((t: any) => t.name === techName);
-        if (!tech) {
-          ignored++;
-          continue; // P0-5: reject unknown technician
-        }
-        let techId = tech.id;
-
-        const isDuplicate = db.data.operations.some((op: any) =>
-          (opId && op.id === opId) ||
-          (op.customer_name === customerName && op.device === device && op.date === date)
-        );
-
-        if (isDuplicate) {
-          ignored++;
-          continue;
-        }
-
-        const safeId = (opId && !db.data.operations.some((o:any)=>o.id === opId)) ? opId : currentTimestamp++;
-
-        db.data.operations.push({
-          id: safeId,
-          date: date,
-          month_id: currentMonth.id,
-          customer_name: customerName,
-          device: device,
-          status: 'delivered', // Added default status
-          payment_status: String(row[4]).includes('دين') ? 'debt' : 'cash',
-          cost: Math.max(0, Number(row[5]) || 0),
-          price: Math.max(0, Number(row[6]) || 0),
-          shop_profit: Math.max(0, Number(row[8]) || 0),
-          tech_profit: Math.max(0, Number(row[9]) || 0),
-          technician_id: techId
-        });
-        added++;
-      }
-
-      if (added > 0) {
-        if (!db.save()) {
-          db.data.operations = db.data.operations.slice(0, db.data.operations.length - added);
-          db.load();
-          return { success: false, reason: 'DATABASE_SAVE_FAILED' };
-        }
-      }
-      return { success: true, added, ignored };
-    } catch (err: any) {
-      return { success: false, reason: 'error', message: err.message };
-    }
-  });
-
-
-  ipcMain.handle('import-ic-excel-data', async (_, data: any[]) => {
-    try {
-      let added = 0;
-      let updated = 0;
-      let ignored = 0;
-      if (!db.data.ic_compatibilities) db.data.ic_compatibilities = [];
-      const previousCompatibilities = JSON.parse(JSON.stringify(db.data.ic_compatibilities));
-      let maxId = db.data.ic_compatibilities.reduce((max: number, ic: any) => Math.max(max, ic.id), 0);
-
-      // Process rows: assume standard Category, IC, Devices format
-      // Skip header row
-      for (let i = 1; i < data.length; i++) {
-        const row = data[i] as any[];
-        if (!row || row.length < 2) continue;
-
-        const category = row[0] ? String(row[0]).trim() : 'General';
-        const icCode = String(row[1]).trim();
-        const devicesStr = row[2] ? String(row[2]).trim() : '';
-
-        if (!icCode) continue;
-
-        const existingIdx = db.data.ic_compatibilities.findIndex((ic: any) => String(ic.ic_number || '').toLowerCase() === icCode.toLowerCase());
-
-        if (existingIdx !== -1) {
-          const existingDevices = String(db.data.ic_compatibilities[existingIdx].compatible_devices || '').split(/[,=]/).map((d: string) => d.trim()).filter(Boolean);
-          const newDevices = String(devicesStr || '').split(/[,=]/).map((d: string) => d.trim()).filter(Boolean);
-
-          const deviceMap = new Map<string, string>();
-          [...existingDevices, ...newDevices].forEach(d => {
-            deviceMap.set(d.toLowerCase(), d);
-          });
-          const uniqueDevices = Array.from(deviceMap.values());
-
-          if (uniqueDevices.length > existingDevices.length) {
-            // New devices were found
-            db.data.ic_compatibilities[existingIdx].compatible_devices = uniqueDevices.join(' = ');
-            updated++;
-          } else {
-            // All devices already exist
-            ignored++;
-          }
-        } else {
-          maxId++;
-          db.data.ic_compatibilities.unshift({
-            id: maxId,
-            ic_number: icCode,
-            component_type: category,
-            compatible_devices: String(devicesStr || '').split(/[,=]/).map(d => d.trim()).filter(Boolean).join(' = '),
-            notes: ''
-          });
-          added++;
-        }
-      }
-
-      if (!db.save()) {
-        db.data.ic_compatibilities = previousCompatibilities;
-        db.load();
-        return { success: false, reason: 'IC_IMPORT_SAVE_FAILED' };
-      }
-      return { success: true, added, updated, ignored };
-    } catch (err: any) {
-      return { success: false, reason: 'error', message: err.message };
-    }
-  });
-
-  ipcMain.handle('import-ic-excel', async () => {
-    const { canceled, filePaths } = await dialog.showOpenDialog({
-      title: 'استيراد ملف إكسل للآيسيات',
-      properties: ['openFile'],
-      filters: [{ name: 'Excel Files', extensions: ['xlsx', 'xls'] }]
-    });
-
-    if (canceled || filePaths.length === 0) {
-      return { success: false, reason: 'cancelled' };
-    }
-
-    try {
-      const workbook = xlsx.readFile(filePaths[0]);
-      const sheetName = workbook.SheetNames[0];
-      const worksheet = workbook.Sheets[sheetName];
-      const data = xlsx.utils.sheet_to_json(worksheet, { header: 1 });
-
-      let added = 0;
-      let updated = 0;
-      let ignored = 0;
-      if (!db.data.ic_compatibilities) db.data.ic_compatibilities = [];
-      let maxId = db.data.ic_compatibilities.reduce((max: number, ic: any) => Math.max(max, ic.id), 0);
-
-      // Process rows: assume standard Category, IC, Devices format
-      // Skip header row
-      for (let i = 1; i < data.length; i++) {
-        const row = data[i] as any[];
-        if (!row || row.length < 2) continue;
-
-        const category = row[0] ? String(row[0]).trim() : 'General';
-        const icCode = String(row[1]).trim();
-        const devicesStr = row[2] ? String(row[2]).trim() : '';
-
-        if (!icCode) continue;
-
-        const existingIdx = db.data.ic_compatibilities.findIndex((ic: any) => String(ic.ic_number || '').toLowerCase() === icCode.toLowerCase());
-
-        if (existingIdx !== -1) {
-          const existingDevices = String(db.data.ic_compatibilities[existingIdx].compatible_devices || '').split(/[,=]/).map((d: string) => d.trim()).filter(Boolean);
-          const newDevices = String(devicesStr || '').split(/[,=]/).map((d: string) => d.trim()).filter(Boolean);
-
-          const deviceMap = new Map<string, string>();
-          [...existingDevices, ...newDevices].forEach(d => {
-            deviceMap.set(d.toLowerCase(), d);
-          });
-          const uniqueDevices = Array.from(deviceMap.values());
-
-          if (uniqueDevices.length > existingDevices.length) {
-            // New devices were found
-            db.data.ic_compatibilities[existingIdx].compatible_devices = uniqueDevices.join(' = ');
-            updated++;
-          } else {
-            // All devices already exist
-            ignored++;
-          }
-        } else {
-          maxId++;
-          db.data.ic_compatibilities.unshift({
-            id: maxId,
-            ic_number: icCode,
-            component_type: category,
-            compatible_devices: String(devicesStr || '').split(/[,=]/).map(d => d.trim()).filter(Boolean).join(' = '),
-            notes: ''
-          });
-          added++;
-        }
-      }
-
-      db.save();
-      return { success: true, added, updated, ignored };
-    } catch (err: any) {
-      return { success: false, reason: 'error', message: err.message };
-    }
-  });
-
-  // Monthly Settlement
-  ipcMain.handle('close-month', (_, newCapital) => {
-    // Validate newCapital
-    if (typeof newCapital !== 'number' || !Number.isFinite(newCapital) || Number.isNaN(newCapital) || newCapital < 0) {
-      return { success: false, reason: 'INVALID_NEW_CAPITAL' };
-    }
-
-    const currentMonth = getCurrentMonth();
-    const oldIsClosed = currentMonth.is_closed;
-    const oldClosedAt = currentMonth.closed_at;
-    
-    currentMonth.is_closed = true;
-    currentMonth.closed_at = new Date().toISOString();
-
-    const newMonthId = generateMonthId();
-    const newMonth = {
-      id: newMonthId,
-      month_name: new Date().toLocaleDateString('ar-EG', { month: 'long', year: 'numeric' }),
-      start_capital: newCapital,
-      is_closed: false,
-      created_at: new Date().toISOString(),
-      closed_at: null
-    };
-    db.data.months.push(newMonth);
-
-    if (!db.save()) {
-      currentMonth.is_closed = oldIsClosed;
-      currentMonth.closed_at = oldClosedAt;
-      db.data.months.pop();
-      db.load();
-      return { success: false, reason: 'MONTH_CLOSE_SAVE_FAILED' };
-    }
-    return { success: true };
-  });
-
-  ipcMain.handle('close-month-with-excel', async (_, newCapital) => {
-    // Validate newCapital
-    if (typeof newCapital !== 'number' || !Number.isFinite(newCapital) || Number.isNaN(newCapital) || newCapital < 0) {
-      return { success: false, reason: 'INVALID_NEW_CAPITAL' };
-    }
-
-    const currentMonth = getCurrentMonth();
-
-    const ops = db.data.operations.filter((op: any) => op.month_id === currentMonth.id || op.paid_in_month_id === currentMonth.id);
-    const allDebts = db.data.operations.filter((op: any) => op.payment_status === 'debt');
-    const currentMonthDebts = allDebts.filter((op: any) => op.month_id === currentMonth.id);
-    const tiedCapital = currentMonthDebts.reduce((sum: number, op: any) => sum + (op.cost || 0), 0);
-    const availableCapital = currentMonth.start_capital - tiedCapital;
-
-    const cashOps = ops.filter((op: any) => op.payment_status === 'cash' && !op.paid_in_month_id);
-    const paidDebts = db.data.operations.filter((op: any) => op.paid_in_month_id === currentMonth.id);
-    const realizedShopProfit = cashOps.reduce((sum: number, op: any) => sum + (op.shop_profit || 0), 0) +
-      paidDebts.reduce((sum: number, op: any) => sum + (op.shop_profit || 0), 0);
-
-    const shopWithdrawals = db.data.withdrawals
-      .filter((w: any) => w.type === 'shop_withdrawal' && w.month_id === currentMonth.id)
-      .reduce((sum: number, w: any) => sum + (w.amount || 0), 0);
-    const totalTechWithdrawals = db.data.withdrawals
-      .filter((w: any) => w.type === 'tech_withdrawal' && w.month_id === currentMonth.id)
-      .reduce((sum: number, w: any) => sum + (w.amount || 0), 0);
-
-    const totalTechProfit = ops.reduce((sum: number, op: any) => sum + (op.tech_profit || 0), 0);
-    const debtTotal = allDebts.reduce((sum: number, op: any) => sum + (op.price || 0), 0);
-
-    const summaryData = [
-      ["تقرير شهر", currentMonth.month_name || currentMonth.date || ''],
-      [""],
-      ["رأس المال الأساسي", currentMonth.start_capital],
-      ["رأس المال المسترد فعلياً", availableCapital],
-      ["إجمالي الأرباح الصافية للمحل (المحصلة)", realizedShopProfit],
-      ["إجمالي سحوبات المحل", shopWithdrawals],
-      ["الصافي المستحق للمحل", availableCapital + realizedShopProfit - shopWithdrawals],
-      [""],
-      ["إجمالي أرباح الفنيين", totalTechProfit],
-      ["إجمالي سحوبات الفنيين", totalTechWithdrawals],
-      [""],
-      ["إجمالي الديون المتبقية (السوق)", debtTotal]
-    ];
-
-    const opsLogData = ops.map((op: any) => ({
-      "التاريخ": op.date,
-      "رقم العملية": op.id,
-      "اسم العميل": op.customer_name || '-',
-      "الجهاز/الأعطال": (op.device || '') + (op.faults && op.faults.length > 0 ? ` (${op.faults.join(', ')})` : ''),
-      "حالة الدفع": op.payment_status === 'debt' ? 'دين' : 'نقدي',
-      "التكلفة": op.cost || 0,
-      "المبلغ الإجمالي": op.price || 0,
-      "صافي الربح": (op.price || 0) - (op.cost || 0),
-      "حصة المحل": op.shop_profit || 0,
-      "حصة الفني": op.tech_profit || 0,
-      "اسم الفني": op.technician_name
-    }));
-
-    const wb = xlsx.utils.book_new();
-    const wsSummary = xlsx.utils.aoa_to_sheet(summaryData);
-    const wsOps = xlsx.utils.json_to_sheet(opsLogData);
-
-    wsSummary['!cols'] = [{ wch: 40 }, { wch: 20 }];
-    wsOps['!cols'] = [
-      { wch: 15 }, { wch: 15 }, { wch: 25 }, { wch: 20 },
-      { wch: 15 }, { wch: 15 }, { wch: 15 }, { wch: 15 },
-      { wch: 15 }, { wch: 15 }, { wch: 20 }
-    ];
-
-    xlsx.utils.book_append_sheet(wb, wsSummary, "الخلاصة");
-    xlsx.utils.book_append_sheet(wb, wsOps, "سجل العمليات");
-
-    const defaultPath = `Settlement_${currentMonth.month_name || currentMonth.date || 'unknown'}.xlsx`.replace(/\//g, '-');
-    const { canceled, filePath } = await dialog.showSaveDialog({
-      title: 'حفظ نسخة احتياطية للتقفيل الشهري',
-      defaultPath: defaultPath,
-      filters: [{ name: 'Excel Files', extensions: ['xlsx'] }]
-    });
-
-    if (canceled || !filePath) {
-      return { success: false, reason: 'cancelled' };
-    }
-
-    try {
-      const buf = xlsx.write(wb, { type: 'buffer', bookType: 'xlsx' });
-      fs.writeFileSync(filePath, buf);
-    } catch (err: any) {
-      return { success: false, reason: 'error', message: err.message };
-    }
-
-    // Perform month reset
-    const oldIsClosed = currentMonth.is_closed;
-    const oldClosedAt = currentMonth.closed_at;
-    
-    currentMonth.is_closed = true;
-    currentMonth.closed_at = new Date().toISOString();
-
-    const newMonthId = generateMonthId();
-    const newMonth = {
-      id: newMonthId,
-      month_name: new Date().toLocaleDateString('ar-EG', { month: 'long', year: 'numeric' }),
-      start_capital: newCapital,
-      is_closed: false,
-      created_at: new Date().toISOString(),
-      closed_at: null
-    };
-    db.data.months.push(newMonth);
-
-    if (!db.save()) {
-      currentMonth.is_closed = oldIsClosed;
-      currentMonth.closed_at = oldClosedAt;
-      db.data.months.pop();
-      db.load();
-      return { success: false, reason: 'MONTH_CLOSE_SAVE_FAILED' };
-    }
-    return { success: true };
+    return icRepo.deleteIcCompatibility(id);
   });
 
   // Scrap Devices
   ipcMain.handle('get-scrap-devices', () => {
-    return db.data.scrap_devices || [];
+    return scrapRepo.getScrapDevices();
   });
 
   ipcMain.handle('add-scrap-device', (_, data) => {
-    if (!db.data.scrap_devices) db.data.scrap_devices = [];
-    const newId = Date.now();
-    db.data.scrap_devices.push({ id: newId, ...data });
-    if (!db.save()) {
-      db.data.scrap_devices.pop();
-      db.load();
-      return { success: false, reason: 'DATABASE_SAVE_FAILED' };
-    }
-    return { success: true };
+    return scrapRepo.addScrapDevice(data);
   });
 
   ipcMain.handle('edit-scrap-device', (_, id, data) => {
-    const idx = db.data.scrap_devices.findIndex((d: any) => d.id === id);
-    if (idx !== -1) {
-      const oldD = { ...db.data.scrap_devices[idx] };
-      db.data.scrap_devices[idx] = { ...oldD, ...data };
-      if (!db.save()) {
-        db.data.scrap_devices[idx] = oldD;
-        db.load();
-        return { success: false, reason: 'DATABASE_SAVE_FAILED' };
-      }
-      return { success: true };
-    }
-    return { success: false, reason: 'NOT_FOUND' };
+    return scrapRepo.editScrapDevice(id, data);
   });
 
   ipcMain.handle('delete-scrap-device', (_, id) => {
-    const idx = db.data.scrap_devices.findIndex((d: any) => d.id === id);
-    if (idx !== -1) {
-      const deletedItem = db.data.scrap_devices[idx];
-      db.data.scrap_devices.splice(idx, 1);
-      
-      if (!db.save()) {
-        db.data.scrap_devices.splice(idx, 0, deletedItem);
-        db.load();
-        return { success: false, reason: 'SCRAP_DEVICE_DELETE_SAVE_FAILED' };
-      }
-      return { success: true };
-    }
-    return { success: false, reason: 'NOT_FOUND' };
+    return scrapRepo.deleteScrapDevice(id);
   });
 
   // Quick Lists
   ipcMain.handle('get-quick-lists', () => {
-    return {
-      devices: db.data.common_devices || [],
-      faults: db.data.common_faults || []
-    };
+    return quickListsRepo.getQuickLists();
   });
 
   ipcMain.handle('add-quick-list-item', (_, type: 'device' | 'fault', item: string) => {
-    const targetArray = type === 'device' ? 'common_devices' : 'common_faults';
-    if (!db.data[targetArray]) db.data[targetArray] = [];
-    if (!db.data[targetArray].includes(item)) {
-      db.data[targetArray].push(item);
-      if (!db.save()) {
-        db.data[targetArray].pop();
-        db.load();
-        return { success: false, reason: 'DATABASE_SAVE_FAILED' };
-      }
-      return { success: true };
-    }
-    return { success: false, reason: 'ALREADY_EXISTS' };
+    return quickListsRepo.addQuickListItem(type, item);
   });
 
   ipcMain.handle('remove-quick-list-item', (_, type: 'device' | 'fault', item: string) => {
-    const targetArray = type === 'device' ? 'common_devices' : 'common_faults';
-    if (db.data[targetArray]) {
-      const oldArray = [...db.data[targetArray]];
-      db.data[targetArray] = db.data[targetArray].filter((i: string) => i !== item);
-      if (!db.save()) {
-        db.data[targetArray] = oldArray;
-        db.load();
-        return { success: false, reason: 'DATABASE_SAVE_FAILED' };
-      }
-      return { success: true };
-    }
-    return { success: false, reason: 'NOT_FOUND' };
+    return quickListsRepo.removeQuickListItem(type, item);
   });
 
-  ipcMain.handle('create-full-backup', async () => {
+  // Months
+  ipcMain.handle('close-month', (_, newCapital) => {
+    return monthsRepo.closeMonth(newCapital);
+  });
+
+  // Excel Operations Import
+  ipcMain.handle('import-operations-excel-data', async (_, data: any[]) => {
     try {
-      const wb = xlsx.utils.book_new();
-      
-      const wsOps = xlsx.utils.json_to_sheet(db.data.operations || []);
-      xlsx.utils.book_append_sheet(wb, wsOps, "العمليات");
+      const db = getDB();
+      const currentMonth = monthsRepo.getCurrentMonth();
+      const technicians = techniciansRepo.getAllTechnicians();
+      let added = 0;
+      let ignored = 0;
 
-      const wsWith = xlsx.utils.json_to_sheet(db.data.withdrawals || []);
-      xlsx.utils.book_append_sheet(wb, wsWith, "السحوبات");
+      const importTx = db.transaction(() => {
+        for (let i = 1; i < data.length; i++) {
+          const row = data[i] as any[];
+          if (!row || row.length < 3) continue;
 
-      const wsTech = xlsx.utils.json_to_sheet(db.data.technicians || []);
-      xlsx.utils.book_append_sheet(wb, wsTech, "الفنيين");
+          const date = row[0] ? String(row[0]).trim() : new Date().toLocaleDateString('en-GB');
+          const opId = row[1] ? Number(row[1]) : null;
+          const customerName = String(row[2] || '').trim();
+          const device = String(row[3] || '').trim();
+          const techName = String(row[10] || '').trim();
 
-      const defaultPath = `Full_Backup_${new Date().toISOString().split('T')[0]}.xlsx`;
-      const { canceled, filePath } = await dialog.showSaveDialog({
-        title: 'حفظ نسخة احتياطية كاملة (Excel & JSON)',
-        defaultPath: defaultPath,
-        filters: [{ name: 'Excel Files', extensions: ['xlsx'] }]
+          const tech = technicians.find(t => t.name === techName);
+          if (!tech) {
+            ignored++;
+            continue;
+          }
+
+          // Deduplication
+          let isDuplicate = false;
+          if (opId) {
+            const existing = db.prepare('SELECT id FROM operations WHERE id = ?').get(opId);
+            if (existing) isDuplicate = true;
+          }
+          if (!isDuplicate) {
+            const existing = db.prepare('SELECT id FROM operations WHERE customer_name = ? AND device = ? AND date = ?')
+              .get(customerName, device, date);
+            if (existing) isDuplicate = true;
+          }
+
+          if (isDuplicate) {
+            ignored++;
+            continue;
+          }
+
+          const price = Math.max(0, Number(row[6]) || 0);
+          const cost = Math.max(0, Number(row[5]) || 0);
+          const shopProfit = Math.max(0, Number(row[8]) || 0);
+          const techProfit = Math.max(0, Number(row[9]) || 0);
+          const paymentStatus = String(row[4]).includes('دين') ? 'debt' : 'cash';
+
+          const safeId = (opId && !db.prepare('SELECT id FROM operations WHERE id = ?').get(opId)) ? opId : (Date.now() + i);
+
+          operationsRepo.addOperation({
+            id: safeId,
+            date,
+            month_id: currentMonth.id,
+            technician_id: tech.id,
+            customer_name: customerName,
+            device,
+            status: 'delivered',
+            payment_status: paymentStatus,
+            cost,
+            price,
+            shop_profit: shopProfit,
+            tech_profit: techProfit
+          });
+          added++;
+        }
       });
+
+      importTx();
+      return { success: true, added, ignored };
+    } catch (err: any) {
+      console.error('[Excel Import] Error:', err);
+      return { success: false, reason: 'error', message: err?.message || String(err) };
+    }
+  });
+
+  ipcMain.handle('import-operations-excel', async () => {
+    const dialogOptions = {
+      title: 'استيراد ملف إكسل للعمليات',
+      properties: ['openFile' as const],
+      filters: [{ name: 'Excel Files', extensions: ['xlsx', 'xls'] }]
+    };
+
+    const { canceled, filePaths } = mainWindow
+      ? await dialog.showOpenDialog(mainWindow, dialogOptions)
+      : await dialog.showOpenDialog(dialogOptions);
+
+    if (canceled || filePaths.length === 0) {
+      return { success: false, reason: 'cancelled' };
+    }
+
+    try {
+      const workbook = xlsx.readFile(filePaths[0]);
+      const sheetName = workbook.SheetNames[0];
+      const worksheet = workbook.Sheets[sheetName];
+      const data = xlsx.utils.sheet_to_json(worksheet, { header: 1 }) as any[];
+
+      const db = getDB();
+      const currentMonth = monthsRepo.getCurrentMonth();
+      const technicians = techniciansRepo.getAllTechnicians();
+      let added = 0;
+      let ignored = 0;
+
+      const importTx = db.transaction(() => {
+        for (let i = 1; i < data.length; i++) {
+          const row = data[i] as any[];
+          if (!row || row.length < 3) continue;
+
+          const date = row[0] ? String(row[0]).trim() : new Date().toLocaleDateString('en-GB');
+          const opId = row[1] ? Number(row[1]) : null;
+          const customerName = String(row[2] || '').trim();
+          const device = String(row[3] || '').trim();
+          const techName = String(row[10] || '').trim();
+
+          const tech = technicians.find(t => t.name === techName);
+          if (!tech) {
+            ignored++;
+            continue;
+          }
+
+          let isDuplicate = false;
+          if (opId) {
+            const existing = db.prepare('SELECT id FROM operations WHERE id = ?').get(opId);
+            if (existing) isDuplicate = true;
+          }
+          if (!isDuplicate) {
+            const existing = db.prepare('SELECT id FROM operations WHERE customer_name = ? AND device = ? AND date = ?')
+              .get(customerName, device, date);
+            if (existing) isDuplicate = true;
+          }
+
+          if (isDuplicate) {
+            ignored++;
+            continue;
+          }
+
+          const price = Math.max(0, Number(row[6]) || 0);
+          const cost = Math.max(0, Number(row[5]) || 0);
+          const shopProfit = Math.max(0, Number(row[8]) || 0);
+          const techProfit = Math.max(0, Number(row[9]) || 0);
+          const paymentStatus = String(row[4]).includes('دين') ? 'debt' : 'cash';
+
+          const safeId = (opId && !db.prepare('SELECT id FROM operations WHERE id = ?').get(opId)) ? opId : (Date.now() + i);
+
+          operationsRepo.addOperation({
+            id: safeId,
+            date,
+            month_id: currentMonth.id,
+            technician_id: tech.id,
+            customer_name: customerName,
+            device,
+            status: 'delivered',
+            payment_status: paymentStatus,
+            cost,
+            price,
+            shop_profit: shopProfit,
+            tech_profit: techProfit
+          });
+          added++;
+        }
+      });
+
+      importTx();
+      return { success: true, added, ignored };
+    } catch (err: any) {
+      console.error('[Excel File Import] Error:', err);
+      return { success: false, reason: 'error', message: err?.message || String(err) };
+    }
+  });
+
+  // IC Import
+  ipcMain.handle('import-ic-excel-data', async (_, data: any[]) => {
+    try {
+      const db = getDB();
+      let added = 0;
+      let ignored = 0;
+
+      const importTx = db.transaction(() => {
+        for (let i = 1; i < data.length; i++) {
+          const row = data[i] as any[];
+          if (!row || row.length < 1) continue;
+
+          const icNumber = String(row[0] || '').trim();
+          if (!icNumber) {
+            ignored++;
+            continue;
+          }
+
+          const componentType = row[1] ? String(row[1]).trim() : '';
+          const compatibleDevices = row[2] ? String(row[2]).trim() : '';
+          const notes = row[3] ? String(row[3]).trim() : '';
+
+          const exists = db.prepare('SELECT id FROM ic_compatibilities WHERE ic_number = ? AND component_type = ? AND compatible_devices = ?')
+            .get(icNumber, componentType, compatibleDevices);
+
+          if (exists) {
+            ignored++;
+            continue;
+          }
+
+          icRepo.addIcCompatibility({
+            ic_number: icNumber,
+            component_type: componentType,
+            compatible_devices: compatibleDevices,
+            notes
+          });
+          added++;
+        }
+      });
+
+      importTx();
+      return { success: true, added, ignored };
+    } catch (err: any) {
+      console.error('[IC Import] Error:', err);
+      return { success: false, reason: 'error', message: err?.message || String(err) };
+    }
+  });
+
+  ipcMain.handle('import-ic-excel', async () => {
+    const dialogOptions = {
+      title: 'استيراد ملف إكسل لبدائل الآيسيات',
+      properties: ['openFile' as const],
+      filters: [{ name: 'Excel Files', extensions: ['xlsx', 'xls'] }]
+    };
+
+    const { canceled, filePaths } = mainWindow
+      ? await dialog.showOpenDialog(mainWindow, dialogOptions)
+      : await dialog.showOpenDialog(dialogOptions);
+
+    if (canceled || filePaths.length === 0) {
+      return { success: false, reason: 'cancelled' };
+    }
+
+    try {
+      const workbook = xlsx.readFile(filePaths[0]);
+      const sheetName = workbook.SheetNames[0];
+      const worksheet = workbook.Sheets[sheetName];
+      const data = xlsx.utils.sheet_to_json(worksheet, { header: 1 }) as any[];
+
+      const db = getDB();
+      let added = 0;
+      let ignored = 0;
+
+      const importTx = db.transaction(() => {
+        for (let i = 1; i < data.length; i++) {
+          const row = data[i] as any[];
+          if (!row || row.length < 1) continue;
+
+          const icNumber = String(row[0] || '').trim();
+          if (!icNumber) {
+            ignored++;
+            continue;
+          }
+
+          const componentType = row[1] ? String(row[1]).trim() : '';
+          const compatibleDevices = row[2] ? String(row[2]).trim() : '';
+          const notes = row[3] ? String(row[3]).trim() : '';
+
+          const exists = db.prepare('SELECT id FROM ic_compatibilities WHERE ic_number = ? AND component_type = ? AND compatible_devices = ?')
+            .get(icNumber, componentType, compatibleDevices);
+
+          if (exists) {
+            ignored++;
+            continue;
+          }
+
+          icRepo.addIcCompatibility({
+            ic_number: icNumber,
+            component_type: componentType,
+            compatible_devices: compatibleDevices,
+            notes
+          });
+          added++;
+        }
+      });
+
+      importTx();
+      return { success: true, added, ignored };
+    } catch (err: any) {
+      console.error('[IC File Import] Error:', err);
+      return { success: false, reason: 'error', message: err?.message || String(err) };
+    }
+  });
+
+  // Close Month with Excel
+  ipcMain.handle('close-month-with-excel', async (_, newCapital) => {
+    try {
+      const currentMonth = monthsRepo.getCurrentMonth();
+      const allOps = operationsRepo.getAllOperations().filter(op => op.month_id === currentMonth.id);
+      const allWiths = withdrawalsRepo.getWithdrawals();
+
+      const opsFormatted = allOps.map(op => {
+        const paidAmt = op.paid_amount !== undefined ? op.paid_amount : (op.payment_status === 'cash' ? op.price : 0);
+        const remAmt = Math.max(0, op.price - paidAmt);
+        return {
+          "رقم العملية": op.id,
+          "التاريخ": op.date,
+          "اسم العميل": op.customer_name,
+          "الجهاز": op.device,
+          "اسم الفني": op.technician_name || '-',
+          "حالة الدفع": op.payment_status === 'cash' ? 'نقدي' : (op.payment_status === 'partial' ? 'مدفوع جزئياً' : 'دين'),
+          "المبلغ الإجمالي": op.price,
+          "التكلفة": op.cost,
+          "المدفوع": paidAmt,
+          "المتبقي (الدين)": remAmt,
+          "صافي الربح": op.price - op.cost,
+          "حصة الفني": op.tech_profit,
+          "حصة المحل": op.shop_profit
+        };
+      });
+
+      const withFormatted = allWiths.map(w => ({
+        "رقم السحب": w.id,
+        "التاريخ": w.date,
+        "النوع": w.type === 'shop_withdrawal' ? 'سحب محل' : 'سحب فني',
+        "اسم الفني": w.technician_name || '-',
+        "المبلغ": w.amount,
+        "الملاحظات": w.description || '-'
+      }));
+
+      const wb = xlsx.utils.book_new();
+      xlsx.utils.book_append_sheet(wb, xlsx.utils.json_to_sheet(opsFormatted), "سجل العمليات");
+      xlsx.utils.book_append_sheet(wb, xlsx.utils.json_to_sheet(withFormatted), "سجل السحوبات");
+
+      const defaultFilename = `تقرير_إغلاق_${currentMonth.month_name.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.xlsx`;
+      const dialogOptions = {
+        title: 'حفظ تقرير إغلاق الشهر (Excel)',
+        defaultPath: defaultFilename,
+        filters: [{ name: 'Excel Files', extensions: ['xlsx'] }]
+      };
+
+      const { canceled, filePath } = mainWindow
+        ? await dialog.showSaveDialog(mainWindow, dialogOptions)
+        : await dialog.showSaveDialog(dialogOptions);
 
       if (canceled || !filePath) {
         return { success: false, reason: 'cancelled' };
       }
 
-      // Save Excel for User
-      const buf = xlsx.write(wb, { type: 'buffer', bookType: 'xlsx' });
-      fs.writeFileSync(filePath, buf);
+      xlsx.writeFile(wb, filePath);
+
+      // Close the month in SQLite
+      const closeResult = monthsRepo.closeMonth(newCapital);
+      return closeResult;
+    } catch (err: any) {
+      console.error('[Close Month with Excel] Error:', err);
+      return { success: false, reason: 'error', message: err?.message || String(err) };
+    }
+  });
+
+  // Full Backup (5-sheet Arabic Excel + JSON snapshot)
+  ipcMain.handle('create-full-backup', async () => {
+    try {
+      const allOps = operationsRepo.getAllOperations();
+      const allWiths = withdrawalsRepo.getAllWithdrawals();
+      const allTechs = techniciansRepo.getAllTechnicians();
+      const allCusts = customersRepo.getCustomers();
+      const dashStats = statsRepo.getDashboardStats();
+      const techStats = statsRepo.getTechnicianStats();
+
+      const getPaidAmount = (op: any) => op.paid_amount ?? (op.payment_status === 'cash' ? (op.price || 0) : 0);
+      const getRemainingAmount = (op: any) => Math.max(0, (op.price || 0) - getPaidAmount(op));
+
+      const getStatusLabel = (status: string) => {
+        switch (status) {
+          case 'under_maintenance': return 'قيد الصيانة';
+          case 'completed': return 'جاهز / مكتمل';
+          case 'delivered': return 'تم التسليم';
+          case 'cancelled': return 'ملغى';
+          default: return status || '-';
+        }
+      };
+
+      const getPaymentStatusLabel = (pStatus: string, paidAmt?: number, price?: number) => {
+        if (pStatus === 'cash' || (paidAmt !== undefined && price !== undefined && paidAmt >= price)) {
+          return 'نقدي (مدفوع بالكامل)';
+        }
+        if (pStatus === 'partial' || (paidAmt !== undefined && price !== undefined && paidAmt > 0 && paidAmt < price)) {
+          return 'مدفوع جزئياً';
+        }
+        if (pStatus === 'debt') {
+          return 'دين (آجل)';
+        }
+        return pStatus || '-';
+      };
+
+      const summaryData: any[][] = [
+        ["التقرير المالي العام وخلاصة الكاش والأرباح"],
+        ["تاريخ التصدير", new Date().toLocaleDateString('ar-EG', { dateStyle: 'full' })],
+        [""],
+        ["=== حركة الكاش والصندوق ==="],
+        ["رأس المال الافتتاحي للشهر", dashStats.baseCapital],
+        ["إجمالي سحوبات الشهر", dashStats.totalWithdrawals],
+        ["صافي رصيد الكاش / الصندوق الحالي", dashStats.cashBox],
+        [""],
+        ["=== ملخص الأرباح ==="],
+        ["إجمالي الأرباح الكلية (للأجهزة المسلمة)", dashStats.totalProfit],
+        ["إجمالي أرباح المحل (الصافية)", dashStats.totalShopProfit],
+        ["إجمالي سحوبات المحل", dashStats.totalShopWithdrawal],
+        ["الصافي المستحق للمحل", dashStats.shopDue],
+        ["أرباح متوقعة قيد الإنجاز (أجهزة لم تُسلّم)", dashStats.uncollectedProfit],
+        [""],
+        ["=== ملخص الديون بالسوق ==="],
+        ["إجمالي الديون المتبقية بذمة العملاء", dashStats.debtTotal],
+        [""],
+        ["=== ملخص مستحقات وأرباح الفنيين ==="],
+        ["إجمالي أرباح جميع الفنيين", dashStats.totalTechProfit],
+        [""],
+        ["جدول تفصيلي بأرصدة وأرباح كل فني:"],
+        ["اسم الفني", "نسبة الربح", "إجمالي التكلفة", "إجمالي الأرباح المحققة", "إجمالي السحوبات", "الرصيد المتبقي المستحق", "الحالة"]
+      ];
+
+      techStats.forEach(t => {
+        summaryData.push([
+          t.name,
+          `${((t.profit_percentage || 0) * 100).toFixed(0)}%`,
+          t.totalCost,
+          t.totalProfit,
+          t.totalWithdrawal,
+          t.remainingBalance,
+          t.is_active ? 'نشط' : 'غير نشط'
+        ]);
+      });
+
+      const wb = xlsx.utils.book_new();
+
+      // Sheet 1: Summary
+      const wsSummary = xlsx.utils.aoa_to_sheet(summaryData);
+      wsSummary['!cols'] = [{ wch: 45 }, { wch: 20 }, { wch: 18 }, { wch: 22 }, { wch: 18 }, { wch: 24 }, { wch: 15 }];
+      xlsx.utils.book_append_sheet(wb, wsSummary, "التقرير المالي والخلاصة");
+
+      // Sheet 2: Operations
+      const opsFormatted = allOps.map(op => ({
+        "رقم العملية": op.id,
+        "التاريخ": op.date,
+        "اسم العميل": op.customer_name || '-',
+        "هاتف العميل": op.customer_phone || '-',
+        "الجهاز": op.device || '-',
+        "الأعطال": Array.isArray(op.faults) ? op.faults.join('، ') : (op.faults || '-'),
+        "اسم الفني": op.technician_name || '-',
+        "حالة الجهاز": getStatusLabel(op.status),
+        "حالة الدفع": getPaymentStatusLabel(op.payment_status, op.paid_amount, op.price),
+        "المبلغ الإجمالي": op.price,
+        "التكلفة": op.cost,
+        "المبلغ الواصل (المدفوع)": getPaidAmount(op),
+        "المبلغ المتبقي (الدين)": getRemainingAmount(op),
+        "صافي الربح": op.price - op.cost,
+        "حصة الفني": op.tech_profit,
+        "حصة المحل": op.shop_profit,
+        "نسبة الفني": op.tech_profit_percentage !== undefined ? `${(op.tech_profit_percentage * 100).toFixed(0)}%` : '-',
+        "الضمان": op.warranty_enabled ? (op.warranty_days ? `${op.warranty_days} يوم` : 'مفعل') : 'بدون ضمان',
+        "تاريخ انتهاء الضمان": op.warranty_expiry_date || '-',
+        "ملاحظات الضمان": op.warranty_note || '-',
+        "ملاحظات عامة": op.notes || '-'
+      }));
+
+      const wsOps = xlsx.utils.json_to_sheet(opsFormatted);
+      wsOps['!cols'] = [
+        { wch: 14 }, { wch: 14 }, { wch: 22 }, { wch: 16 }, { wch: 18 },
+        { wch: 25 }, { wch: 18 }, { wch: 18 }, { wch: 24 }, { wch: 16 },
+        { wch: 14 }, { wch: 22 }, { wch: 20 }, { wch: 14 }, { wch: 14 },
+        { wch: 14 }, { wch: 14 }, { wch: 16 }, { wch: 20 }, { wch: 20 },
+        { wch: 22 }
+      ];
+      xlsx.utils.book_append_sheet(wb, wsOps, "سجل العمليات");
+
+      // Sheet 3: Withdrawals
+      const withdrawalsFormatted = allWiths.map(w => ({
+        "رقم السحب": w.id,
+        "التاريخ": w.date,
+        "نوع السحب": w.type === 'shop_withdrawal' ? 'سحب محل' : 'سحب فني',
+        "اسم الفني": w.technician_name || '-',
+        "المبلغ": w.amount,
+        "البيان / الملاحظات": w.description || '-'
+      }));
+      const wsWith = xlsx.utils.json_to_sheet(withdrawalsFormatted);
+      wsWith['!cols'] = [{ wch: 14 }, { wch: 14 }, { wch: 18 }, { wch: 20 }, { wch: 16 }, { wch: 30 }];
+      xlsx.utils.book_append_sheet(wb, wsWith, "سجل السحوبات");
+
+      // Sheet 4: Technicians
+      const techFormatted = techStats.map(tech => ({
+        "رقم الفني": tech.id,
+        "اسم الفني": tech.name,
+        "نسبة الفني": `${((tech.profit_percentage || 0) * 100).toFixed(0)}%`,
+        "الحالة": tech.is_active ? 'نشط' : 'غير نشط',
+        "أرباح الشهر الحالي": tech.totalProfit,
+        "سحوبات الشهر الحالي": tech.totalWithdrawal,
+        "الرصيد المستحق": tech.remainingBalance
+      }));
+      const wsTech = xlsx.utils.json_to_sheet(techFormatted);
+      wsTech['!cols'] = [{ wch: 14 }, { wch: 22 }, { wch: 16 }, { wch: 14 }, { wch: 20 }, { wch: 20 }, { wch: 20 }];
+      xlsx.utils.book_append_sheet(wb, wsTech, "سجل الفنيين");
+
+      // Sheet 5: Customers
+      if (allCusts && allCusts.length > 0) {
+        const custFormatted = allCusts.map(c => ({
+          "رقم العميل": c.id,
+          "اسم العميل": c.name || '-',
+          "رقم الهاتف": c.phone || '-',
+          "ملاحظات": c.notes || '-',
+          "تاريخ الإضافة": c.created_at || '-'
+        }));
+        const wsCust = xlsx.utils.json_to_sheet(custFormatted);
+        wsCust['!cols'] = [{ wch: 16 }, { wch: 25 }, { wch: 20 }, { wch: 30 }, { wch: 25 }];
+        xlsx.utils.book_append_sheet(wb, wsCust, "سجل العملاء");
+      }
+
+      const defaultPath = `Full_Backup_${new Date().toISOString().split('T')[0]}.xlsx`;
+      const dialogOptions = {
+        title: 'حفظ نسخة احتياطية كاملة (Excel & JSON)',
+        defaultPath: defaultPath,
+        filters: [{ name: 'Excel Files', extensions: ['xlsx'] }]
+      };
+
+      const { canceled, filePath } = mainWindow
+        ? await dialog.showSaveDialog(mainWindow, dialogOptions)
+        : await dialog.showSaveDialog(dialogOptions);
+
+      if (canceled || !filePath) {
+        return { success: false, reason: 'cancelled' };
+      }
+
+      // Save Excel
+      xlsx.writeFile(wb, filePath);
+
+      // Save companion JSON
+      const jsonFilePath = filePath.toLowerCase().endsWith('.xlsx') 
+        ? filePath.slice(0, -5) + '.json' 
+        : `${filePath}.json`;
       
-      // Save JSON for System Restore / Safety
-      const jsonFilePath = filePath.replace('.xlsx', '.json');
-      fs.writeFileSync(jsonFilePath, JSON.stringify(db.data, null, 2));
+      const fullSnapshot = {
+        settings: settingsRepo.getSettings(),
+        months: monthsRepo.getAllMonths(),
+        technicians: allTechs,
+        customers: allCusts,
+        operations: allOps,
+        withdrawals: allWiths,
+        quick_lists: quickListsRepo.getQuickLists(),
+        ic_compatibilities: icRepo.getIcCompatibilities(),
+        scrap_devices: scrapRepo.getScrapDevices()
+      };
+      fs.writeFileSync(jsonFilePath, JSON.stringify(fullSnapshot, null, 2), 'utf-8');
 
       return { success: true };
     } catch (err: any) {
-      return { success: false, reason: 'error', message: err.message };
+      console.error('[Full Backup] Error:', err);
+      return { success: false, reason: 'error', message: err?.message || String(err) };
     }
   });
 
-  ipcMain.handle('backup:create', () => {
-    return createBackup(db.data, true);
+  // SQLite Backups
+  ipcMain.handle('backup:create', async () => {
+    return createSQLiteBackup(true);
   });
 
   ipcMain.handle('backup:list', () => {
-    return listBackups();
+    return listSQLiteBackups();
   });
 
-  ipcMain.handle('backup:restore', (_, filename) => {
+  ipcMain.handle('backup:restore', async (_, filename) => {
+    return restoreSQLiteBackup(filename);
+  });
+
+  // Factory Reset
+  ipcMain.handle('factory-reset', async () => {
     try {
-      const originalHash = getCanonicalDatabaseHash(db.data);
-      
-      // 1. Read and validate
-      let restoreResult: { data: any, fileHash?: string };
-      try {
-        restoreResult = readBackup(filename);
-      } catch (err: any) {
-        return { success: false, reason: err.message, message: 'الملف غير صالح أو معطوب.' };
+      // 1. Mandatory SQLite Backup before wipe
+      const backupResult = await createSQLiteBackup(true);
+      if (!backupResult.success) {
+        return { success: false, reason: 'FACTORY_RESET_BACKUP_FAILED', message: 'فشل إنشاء نسخة احتياطية إجبارية. تم إيقاف عملية التصفير لحماية البيانات.' };
       }
 
-      const restoredData = restoreResult.data;
-      const expectedHash = getCanonicalDatabaseHash(restoredData);
+      const db = getDB();
+      const resetTx = db.transaction(() => {
+        db.prepare('DELETE FROM payments').run();
+        db.prepare('DELETE FROM operations').run();
+        db.prepare('DELETE FROM withdrawals').run();
+        db.prepare('UPDATE technicians SET start_balance = 0').run();
+        db.prepare('DELETE FROM months WHERE id > 1').run();
 
-      // 2. Backup current DB
-      const preRestoreBackup = createBackup(db.data, true);
-      if (!preRestoreBackup.success) {
-        return { success: false, reason: 'CURRENT_BACKUP_FAILED', message: 'تعذر إنشاء نسخة احتياطية من البيانات الحالية، لذلك لم يتم تنفيذ الاستعادة.' };
-      }
-
-      // 3. Restore to Memory
-      db.data = restoredData;
-      
-      // 4. Save Atomically
-      const saveSuccess = db.save();
-      if (!saveSuccess) {
-        db.load(); // Re-sync memory from original file on disk
-        const rollbackHash = getCanonicalDatabaseHash(db.data);
-        if (rollbackHash !== originalHash) {
-          return { success: false, reason: 'RESTORE_ROLLBACK_SAVE_FAILED', message: 'CRITICAL RECOVERY ERROR' };
-        }
-        return { success: false, reason: 'DATABASE_SAVE_FAILED', message: 'فشل حفظ قاعدة البيانات إلى القرص.' };
-      }
-
-      // 5. Verify Restore
-      db.load();
-      const actualHash = getCanonicalDatabaseHash(db.data);
-      const opsMatch = db.data.operations?.length === restoredData.operations?.length;
-      const monthsMatch = db.data.months?.length === restoredData.months?.length;
-      const techsMatch = db.data.technicians?.length === restoredData.technicians?.length;
-      const withsMatch = db.data.withdrawals?.length === restoredData.withdrawals?.length;
-
-      if (actualHash !== expectedHash || !opsMatch || !monthsMatch || !techsMatch || !withsMatch) {
-        // ROLLBACK
-        try {
-          const rollbackFilename = path.basename(preRestoreBackup.filename!);
-          const rollbackData = readBackup(rollbackFilename).data;
-          db.data = rollbackData;
-          const rbSave = db.save();
-          db.load();
-          const rollbackHash = getCanonicalDatabaseHash(db.data);
-          
-          if (!rbSave || rollbackHash !== originalHash) {
-            return { success: false, reason: 'RESTORE_ROLLBACK_FAILED', message: 'CRITICAL RECOVERY ERROR' };
-          }
-        } catch (e) {
-          return { success: false, reason: 'RESTORE_ROLLBACK_FAILED', message: 'CRITICAL RECOVERY ERROR' };
-        }
-        return { success: false, reason: 'RESTORE_VERIFY_FAILED', message: 'فشلت عملية الاستعادة. تم التراجع بنجاح.' };
-      }
-
-      return { success: true };
-    } catch (e: any) {
-      db.load(); // Failsafe
-      return { success: false, reason: 'RESTORE_FAILED', message: e.message };
-    }
-  });
-
-  ipcMain.handle('factory-reset', () => {
-    const originalHash = getCanonicalDatabaseHash(db.data);
-    
-    // 1. Mandatory Full JSON Backup before wipe
-    const backupResult = createBackup(db.data, true);
-    if (!backupResult.success) {
-      return { success: false, reason: 'FACTORY_RESET_BACKUP_FAILED', message: 'فشل إنشاء نسخة احتياطية إجبارية. تم إيقاف عملية التصفير لحماية البيانات.' };
-    }
-
-    // 2. Wipe data securely
-    db.data.operations = [];
-    db.data.withdrawals = [];
-    if (db.data.technicians) {
-      db.data.technicians.forEach((t: any) => {
-        t.start_balance = 0;
+        const now = new Date();
+        const settings = settingsRepo.getSettings();
+        db.prepare(`
+          UPDATE months
+          SET month_name = ?, start_capital = ?, is_closed = 0, created_at = ?, closed_at = NULL
+          WHERE id = 1
+        `).run(
+          now.toLocaleDateString('ar-EG', { month: 'long', year: 'numeric' }),
+          settings.base_capital || 0,
+          now.toISOString()
+        );
       });
+
+      resetTx();
+      return { success: true };
+    } catch (err: any) {
+      console.error('[Factory Reset] Error:', err);
+      return { success: false, reason: 'FACTORY_RESET_FAILED', message: err?.message || String(err) };
     }
-
-    db.data.months = [{
-      id: 1,
-      month_name: new Date().toLocaleDateString('ar-EG', { month: 'long', year: 'numeric' }),
-      start_capital: db.data.settings.base_capital || 0,
-      is_closed: false,
-      created_at: new Date().toISOString(),
-      closed_at: null
-    }];
-
-    const saveSuccess = db.save();
-    if (!saveSuccess) {
-      // Rollback
-      try {
-        const rollbackFilename = path.basename(backupResult.filename!);
-        const rollbackData = readBackup(rollbackFilename).data;
-        db.data = rollbackData;
-        const rbSave = db.save();
-        if (!rbSave) return { success: false, reason: 'FACTORY_RESET_ROLLBACK_SAVE_FAILED', message: 'CRITICAL RECOVERY ERROR' };
-        db.load();
-        
-        const rollbackHash = getCanonicalDatabaseHash(db.data);
-        if (rollbackHash !== originalHash) {
-           return { success: false, reason: 'FACTORY_RESET_ROLLBACK_FAILED', message: 'CRITICAL RECOVERY ERROR' };
-        }
-      } catch (e) {
-        return { success: false, reason: 'FACTORY_RESET_ROLLBACK_FAILED', message: 'CRITICAL RECOVERY ERROR' };
-      }
-      return { success: false, reason: 'FACTORY_RESET_FAILED', message: 'فشل التصفير أثناء الحفظ. تم الاحتفاظ بالبيانات.' };
-    }
-
-    // Verify
-    db.load();
-    if (db.data.operations.length !== 0 || db.data.months.length !== 1) {
-      // Rollback
-      try {
-        const rollbackFilename = path.basename(backupResult.filename!);
-        const rollbackData = readBackup(rollbackFilename).data;
-        db.data = rollbackData;
-        const rbSave = db.save();
-        if (!rbSave) return { success: false, reason: 'FACTORY_RESET_ROLLBACK_SAVE_FAILED', message: 'CRITICAL RECOVERY ERROR' };
-        db.load();
-        
-        const rollbackHash = getCanonicalDatabaseHash(db.data);
-        if (rollbackHash !== originalHash) {
-           return { success: false, reason: 'FACTORY_RESET_ROLLBACK_FAILED', message: 'CRITICAL RECOVERY ERROR' };
-        }
-      } catch (e) {
-        return { success: false, reason: 'FACTORY_RESET_ROLLBACK_FAILED', message: 'CRITICAL RECOVERY ERROR' };
-      }
-      return { success: false, reason: 'FACTORY_RESET_FAILED', message: 'فشل التحقق من التصفير. تم التراجع.' };
-    }
-
-    return { success: true };
   });
 }

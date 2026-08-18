@@ -62,6 +62,7 @@ export interface Operation {
   status: 'under_maintenance' | 'completed' | 'delivered' | 'cancelled';
   month_id: number;
   paid_in_month_id?: number;
+  delivered_in_month_id?: number;
   paid_at?: string;
   paid_amount?: number;
   notes?: string;

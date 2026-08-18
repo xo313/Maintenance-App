@@ -86,18 +86,196 @@ export default function Settings() {
     
     try {
       dialog.loading('جاري تصدير ملف الإكسل...');
-      const res = await (window as any).api.createFullBackup();
-      
-      dialog.close();
-      
-      if (res.success) {
-        await dialog.success('تم تصدير ملف الإكسل بنجاح!');
-      } else if (res.reason !== 'cancelled') {
-        await dialog.error('حدث خطأ أثناء التصدير: ' + res.message);
+
+      // Try Electron backend IPC first if available
+      let res: any = null;
+      if (typeof (window as any).api?.createFullBackup === 'function') {
+        try {
+          res = await (window as any).api.createFullBackup();
+        } catch (ipcErr) {
+          console.warn('IPC createFullBackup failed, falling back to direct export:', ipcErr);
+        }
       }
-    } catch (err) {
+
+      if (res && res.success) {
+        dialog.close();
+        await dialog.success('تم تصدير ملف الإكسل والنسخة الاحتياطية بنجاح!');
+        return;
+      }
+
+      if (res && res.reason === 'cancelled') {
+        dialog.close();
+        return;
+      }
+
+      // Fallback: Generate and download directly in frontend via XLSX
+      const [allOps, allTechs, allWiths, allCusts, dashStats, techStats] = await Promise.all([
+        (window as any).api?.getAllOperations?.() || (window as any).api?.getOperations?.() || [],
+        (window as any).api?.getTechnicians?.() || [],
+        (window as any).api?.getWithdrawals?.() || [],
+        (window as any).api?.getCustomers?.() || [],
+        (window as any).api?.getDashboardStats?.() || null,
+        (window as any).api?.getTechnicianStats?.() || []
+      ]);
+
+      const getPaidAmount = (op: any) => op.paid_amount ?? (op.payment_status === 'cash' ? (op.price || 0) : 0);
+      const getRemainingAmount = (op: any) => Math.max(0, (op.price || 0) - getPaidAmount(op));
+
+      const getStatusLabel = (status: string) => {
+        switch (status) {
+          case 'under_maintenance': return 'قيد الصيانة';
+          case 'completed': return 'جاهز / مكتمل';
+          case 'delivered': return 'تم التسليم';
+          case 'cancelled': return 'ملغى';
+          default: return status || '-';
+        }
+      };
+
+      const getPaymentStatusLabel = (pStatus: string, paidAmt?: number, price?: number) => {
+        if (pStatus === 'cash' || (paidAmt !== undefined && price !== undefined && paidAmt >= price)) {
+          return 'نقدي (مدفوع بالكامل)';
+        }
+        if (pStatus === 'partial' || (paidAmt !== undefined && price !== undefined && paidAmt > 0 && paidAmt < price)) {
+          return 'مدفوع جزئياً';
+        }
+        if (pStatus === 'debt') {
+          return 'دين (آجل)';
+        }
+        return pStatus || '-';
+      };
+
+      const summaryData: any[][] = [
+        ["التقرير المالي العام وخلاصة الكاش والأرباح"],
+        ["تاريخ التصدير", new Date().toLocaleDateString('ar-EG', { dateStyle: 'full' })],
+        [""],
+        ["=== حركة الكاش والصندوق ==="],
+        ["رأس المال الافتتاحي للشهر", dashStats?.baseCapital ?? 0],
+        ["إجمالي سحوبات الشهر", dashStats?.totalWithdrawals ?? 0],
+        ["صافي رصيد الكاش / الصندوق الحالي", dashStats?.cashBox ?? 0],
+        [""],
+        ["=== ملخص الأرباح ==="],
+        ["إجمالي الأرباح الكلية (للأجهزة المسلمة)", dashStats?.totalProfit ?? 0],
+        ["إجمالي أرباح المحل (الصافية)", dashStats?.totalShopProfit ?? 0],
+        ["إجمالي سحوبات المحل", dashStats?.totalShopWithdrawal ?? 0],
+        ["الصافي المستحق للمحل", dashStats?.shopDue ?? 0],
+        ["أرباح متوقعة قيد الإنجاز (أجهزة لم تُسلّم)", dashStats?.uncollectedProfit ?? 0],
+        [""],
+        ["=== ملخص الديون بالسوق ==="],
+        ["إجمالي الديون المتبقية بذمة العملاء", dashStats?.debtTotal ?? 0],
+        [""],
+        ["=== ملخص مستحقات وأرباح الفنيين ==="],
+        ["إجمالي أرباح جميع الفنيين", dashStats?.totalTechProfit ?? 0],
+        [""],
+        ["جدول تفصيلي بأرصدة وأرباح كل فني:"],
+        ["اسم الفني", "نسبة الربح", "إجمالي التكلفة", "إجمالي الأرباح المحققة", "إجمالي السحوبات", "الرصيد المتبقي المستحق", "الحالة"]
+      ];
+
+      (techStats || []).forEach((t: any) => {
+        summaryData.push([
+          t.name,
+          `${((t.profit_percentage || 0) * 100).toFixed(0)}%`,
+          t.totalCost || 0,
+          t.totalProfit || 0,
+          t.totalWithdrawal || 0,
+          t.remainingBalance || 0,
+          t.is_active !== false ? 'نشط' : 'غير نشط'
+        ]);
+      });
+
+      const wb = XLSX.utils.book_new();
+
+      // Sheet 1: الخلاصة
+      const wsSummary = XLSX.utils.aoa_to_sheet(summaryData);
+      wsSummary['!cols'] = [{ wch: 45 }, { wch: 20 }, { wch: 18 }, { wch: 22 }, { wch: 18 }, { wch: 24 }, { wch: 15 }];
+      XLSX.utils.book_append_sheet(wb, wsSummary, "التقرير المالي والخلاصة");
+
+      // Sheet 2: العمليات
+      const opsFormatted = (allOps || []).map((op: any) => ({
+        "رقم العملية": op.id,
+        "التاريخ": op.date || '-',
+        "اسم العميل": op.customer_name || '-',
+        "هاتف العميل": op.customer_phone || '-',
+        "الجهاز": op.device || '-',
+        "الأعطال": Array.isArray(op.faults) ? op.faults.join('، ') : (op.faults || '-'),
+        "اسم الفني": op.technician_name || '-',
+        "حالة الجهاز": getStatusLabel(op.status),
+        "حالة الدفع": getPaymentStatusLabel(op.payment_status, op.paid_amount, op.price),
+        "المبلغ الإجمالي": op.price || 0,
+        "التكلفة": op.cost || 0,
+        "المبلغ الواصل (المدفوع)": getPaidAmount(op),
+        "المبلغ المتبقي (الدين)": getRemainingAmount(op),
+        "صافي الربح": (op.price || 0) - (op.cost || 0),
+        "حصة الفني": op.tech_profit || 0,
+        "حصة المحل": op.shop_profit || 0,
+        "نسبة الفني": op.tech_profit_percentage !== undefined ? `${(op.tech_profit_percentage * 100).toFixed(0)}%` : '-',
+        "الضمان": op.warranty_enabled ? (op.warranty_days ? `${op.warranty_days} يوم` : 'مفعل') : 'بدون ضمان',
+        "تاريخ انتهاء الضمان": op.warranty_expiry_date || '-',
+        "ملاحظات الضمان": op.warranty_note || '-',
+        "ملاحظات عامة": op.notes || '-'
+      }));
+
+      const wsOps = XLSX.utils.json_to_sheet(opsFormatted);
+      wsOps['!cols'] = [
+        { wch: 14 }, { wch: 14 }, { wch: 22 }, { wch: 16 }, { wch: 18 },
+        { wch: 25 }, { wch: 18 }, { wch: 18 }, { wch: 24 }, { wch: 16 },
+        { wch: 14 }, { wch: 22 }, { wch: 20 }, { wch: 14 }, { wch: 14 },
+        { wch: 14 }, { wch: 14 }, { wch: 16 }, { wch: 20 }, { wch: 20 },
+        { wch: 22 }
+      ];
+      XLSX.utils.book_append_sheet(wb, wsOps, "سجل العمليات");
+
+      // Sheet 3: السحوبات
+      const withdrawalsFormatted = (allWiths || []).map((w: any) => ({
+        "رقم السحب": w.id,
+        "التاريخ": w.date || '-',
+        "نوع السحب": w.type === 'shop_withdrawal' ? 'سحب محل' : 'سحب فني',
+        "اسم الفني": w.technician_name || '-',
+        "المبلغ": w.amount || 0,
+        "البيان / الملاحظات": w.notes || '-'
+      }));
+      const wsWith = XLSX.utils.json_to_sheet(withdrawalsFormatted);
+      wsWith['!cols'] = [{ wch: 14 }, { wch: 14 }, { wch: 18 }, { wch: 20 }, { wch: 16 }, { wch: 30 }];
+      XLSX.utils.book_append_sheet(wb, wsWith, "سجل السحوبات");
+
+      // Sheet 4: الفنيين
+      const techFormatted = (techStats || allTechs || []).map((tech: any) => ({
+        "رقم الفني": tech.id,
+        "اسم الفني": tech.name,
+        "نسبة الفني": `${((tech.profit_percentage || 0) * 100).toFixed(0)}%`,
+        "الرصيد الافتتاحي": tech.start_balance || 0,
+        "الحالة": tech.is_active !== false ? 'نشط' : 'غير نشط',
+        "أرباح الشهر الحالي": tech.totalProfit || 0,
+        "سحوبات الشهر الحالي": tech.totalWithdrawal || 0,
+        "الرصيد المستحق": tech.remainingBalance || 0
+      }));
+      const wsTech = XLSX.utils.json_to_sheet(techFormatted);
+      wsTech['!cols'] = [{ wch: 14 }, { wch: 22 }, { wch: 16 }, { wch: 18 }, { wch: 14 }, { wch: 20 }, { wch: 20 }, { wch: 20 }];
+      XLSX.utils.book_append_sheet(wb, wsTech, "سجل الفنيين");
+
+      // Sheet 5: العملاء
+      if (allCusts && allCusts.length > 0) {
+        const custFormatted = allCusts.map((c: any) => ({
+          "رقم العميل": c.id,
+          "اسم العميل": c.name || '-',
+          "رقم الهاتف": c.phone || '-',
+          "ملاحظات": c.notes || '-',
+          "تاريخ الإضافة": c.created_at || '-'
+        }));
+        const wsCust = XLSX.utils.json_to_sheet(custFormatted);
+        wsCust['!cols'] = [{ wch: 16 }, { wch: 25 }, { wch: 20 }, { wch: 30 }, { wch: 25 }];
+        XLSX.utils.book_append_sheet(wb, wsCust, "سجل العملاء");
+      }
+
+      // Download file directly
+      const filename = `Full_Backup_${new Date().toISOString().split('T')[0]}.xlsx`;
+      XLSX.writeFile(wb, filename);
+
       dialog.close();
-      await dialog.error('حدث خطأ أثناء تصدير الإكسل.');
+      await dialog.success('تم تصدير ملف الإكسل بنجاح وحفظه!');
+    } catch (err: any) {
+      dialog.close();
+      console.error('Excel export error:', err);
+      await dialog.error('حدث خطأ أثناء تصدير الإكسل: ' + (err?.message || String(err)));
     } finally {
       setIsProcessing(false);
     }
