@@ -39,3 +39,5 @@ migration-state.json
 git_database_test.json
 test_db_p0.json
 *.tmp
+playwright-report/
+test-results/
