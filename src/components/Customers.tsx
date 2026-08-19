@@ -119,7 +119,7 @@ export default function Customers() {
     { bg: 'rgba(56, 189, 248, 0.15)',  color: '#38bdf8' },
   ];
 
-  const getAvatarColor = (id: number) => avatarColors[id % avatarColors.length];
+  const getAvatarColor = (id: number) => avatarColors[Math.abs(id) % avatarColors.length];
 
   const getPaymentLabel = (status: string) => {
     if (status === 'cash') return <span className="badge badge-success">مدفوع</span>;
