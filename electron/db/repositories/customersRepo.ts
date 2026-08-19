@@ -3,7 +3,44 @@ import type { Customer } from '../../src/types.js';
 
 export function getCustomers(): Customer[] {
   const db = getDB();
-  return db.prepare('SELECT * FROM customers ORDER BY created_at DESC').all() as Customer[];
+
+  // Get all registered customers
+  const registered = db.prepare(
+    'SELECT * FROM customers ORDER BY created_at DESC'
+  ).all() as Customer[];
+
+  // Get unique customers referenced in operations but not in customers table
+  // (happens with data migrated from the old JSON-based database)
+  const fromOps = db.prepare(`
+    SELECT DISTINCT
+      customer_name  AS name,
+      customer_phone AS phone,
+      NULL           AS notes,
+      NULL           AS created_at,
+      NULL           AS updated_at
+    FROM operations
+    WHERE customer_name IS NOT NULL
+      AND customer_name != ''
+      AND (
+        customer_id IS NULL
+        OR customer_id NOT IN (SELECT id FROM customers)
+      )
+      AND customer_phone NOT IN (SELECT phone FROM customers WHERE phone IS NOT NULL AND phone != '')
+      AND customer_name NOT IN  (SELECT name  FROM customers)
+    ORDER BY customer_name
+  `).all() as any[];
+
+  // Build virtual Customer objects for the orphan rows (negative IDs so they don't conflict)
+  const orphans: Customer[] = fromOps.map((r, i) => ({
+    id: -(i + 1),      // virtual negative ID — read-only, cannot be deleted/edited
+    name:  r.name  || 'عميل غير معروف',
+    phone: r.phone || '',
+    notes: '',
+    created_at: null,
+    updated_at: null,
+  }));
+
+  return [...registered, ...orphans];
 }
 
 export function getCustomerById(id: number): Customer | null {

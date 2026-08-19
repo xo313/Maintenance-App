@@ -835,12 +835,9 @@ export default function Operations({ initialFilter, clearInitialFilter, initialM
                     <td style={{ color: 'var(--success)' }}>{op.shop_profit.toFixed(2)}</td>
                     <td style={{ textAlign: 'center' }}>
                       {(() => {
-                        const pAmt = op.paid_amount;
-                        const isCash = pAmt !== undefined ? pAmt >= (op.price || 0) : op.payment_status === 'cash';
-                        const isPartial = pAmt !== undefined && pAmt > 0 && pAmt < (op.price || 0);
-
-                        if (isCash) return <StatusBadge status="مسدد" />;
-                        if (isPartial) return <span className="badge badge-warning">جزئي</span>;
+                        const ps = op.payment_status;
+                        if (ps === 'cash') return <StatusBadge status="مسدد" />;
+                        if (ps === 'partial') return <span className="badge badge-warning">جزئي</span>;
                         return <StatusBadge status="دين" />;
                       })()}
                     </td>

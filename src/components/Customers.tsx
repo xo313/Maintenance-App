@@ -76,7 +76,9 @@ export default function Customers() {
 
   const handleViewCustomer = async (customer: Customer) => {
     setViewingCustomer(customer);
-    const ops = await (window as any).api.getCustomerOperations(customer.id, customer.phone);
+    // Virtual customers (id < 0) are from operations only — search by phone
+    const searchId = customer.id > 0 ? customer.id : undefined;
+    const ops = await (window as any).api.getCustomerOperations(searchId, customer.phone);
     setCustomerOperations(ops || []);
   };
 
@@ -220,21 +222,30 @@ export default function Customers() {
                     <Eye size={15} />
                     <span>العمليات</span>
                   </button>
-                  <button
-                    className="btn btn-secondary btn-sm"
-                    style={{ flex: 1 }}
-                    onClick={() => openEditModal(customer)}
-                  >
-                    <Edit size={15} />
-                    <span>تعديل</span>
-                  </button>
-                  <button
-                    className="btn btn-icon btn-sm"
-                    style={{ color: 'var(--danger)' }}
-                    onClick={() => handleDelete(customer.id, customer.name)}
-                  >
-                    <Trash2 size={15} />
-                  </button>
+                  {customer.id > 0 && (
+                    <>
+                      <button
+                        className="btn btn-secondary btn-sm"
+                        style={{ flex: 1 }}
+                        onClick={() => openEditModal(customer)}
+                      >
+                        <Edit size={15} />
+                        <span>تعديل</span>
+                      </button>
+                      <button
+                        className="btn btn-icon btn-sm"
+                        style={{ color: 'var(--danger)' }}
+                        onClick={() => handleDelete(customer.id, customer.name)}
+                      >
+                        <Trash2 size={15} />
+                      </button>
+                    </>
+                  )}
+                  {customer.id < 0 && (
+                    <span style={{ fontSize: '0.75rem', color: 'var(--text-subtle)', alignSelf: 'center' }}>
+                      عميل من العمليات
+                    </span>
+                  )}
                 </div>
               </div>
             );
