@@ -18,8 +18,13 @@ export default function Customers() {
   const dialog = useDialog();
 
   const loadData = async () => {
-    const data = await (window as any).api.getCustomers();
-    setCustomers(data || []);
+    try {
+      const data = await (window as any).api.getCustomers();
+      setCustomers(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error('[Customers] loadData failed:', err);
+      setCustomers([]);
+    }
   };
 
   useEffect(() => { loadData(); }, []);

@@ -40,22 +40,6 @@ function createWindow() {
   mainWindow.setMenuBarVisibility(false);
   mainWindow.maximize();
 
-  // Run automatic migration from legacy database.json if needed
-  const migrationSuccess = runAutomaticMigration();
-  if (!migrationSuccess) {
-    console.error('[Startup] Migration failed. Halting application to protect user data.');
-    app.quit();
-    return;
-  }
-
-  // Open SQLite database and verify integrity
-  const db = getDB();
-  if (!isIntegrityOk(db)) {
-    dialog.showErrorBox('خطأ في قاعدة البيانات', 'تم اكتشاف تلف في ملف قاعدة البيانات SQLite.');
-    app.quit();
-    return;
-  }
-
   setupIPC();
 
   // Run daily backup check on startup and every hour
@@ -69,7 +53,26 @@ function createWindow() {
   }
 }
 
-app.whenReady().then(createWindow);
+function initializeApplication(): boolean {
+  // Complete data migration before creating any renderer window.
+  if (!runAutomaticMigration()) {
+    console.error('[Startup] Migration failed. Halting application to protect user data.');
+    return false;
+  }
+
+  const db = getDB();
+  if (!isIntegrityOk(db)) {
+    dialog.showErrorBox('خطأ في قاعدة البيانات', 'تم اكتشاف تلف في ملف قاعدة البيانات SQLite.');
+    return false;
+  }
+
+  createWindow();
+  return true;
+}
+
+app.whenReady().then(() => {
+  if (!initializeApplication()) app.quit();
+});
 
 app.on('window-all-closed', () => {
   closeDB();
@@ -112,7 +115,12 @@ function setupIPC() {
 
   // Customers
   ipcMain.handle('get-customers', () => {
-    return customersRepo.getCustomers();
+    try {
+      return customersRepo.getCustomersWithOrphans();
+    } catch (err) {
+      console.error('[IPC get-customers] Unexpected error:', err);
+      return [];
+    }
   });
 
   ipcMain.handle('add-customer', (_, customer) => {
