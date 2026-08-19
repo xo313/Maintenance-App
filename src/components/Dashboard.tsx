@@ -227,7 +227,9 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (tab: string, f
                   <td>{debt.date}</td>
                   <td style={{ fontWeight: 600, color: 'var(--text)' }}>{debt.customer_name || '-'}</td>
                   <td>{debt.technician_name}</td>
-                  <td style={{ color: 'var(--danger)', fontWeight: 'bold' }}>{debt.price ? debt.price.toFixed(2) : '0.00'}</td>
+                  <td style={{ color: 'var(--danger)', fontWeight: 'bold' }}>
+                    {((debt.price || 0) - (debt.paid_amount || 0)).toFixed(2)}
+                  </td>
                   <td style={{ textAlign: 'center' }}>
                     <button className="btn btn-secondary" style={{ color: 'var(--success)' }} onClick={() => handlePayDebt(debt.id)}>
                       <CheckCircle2 size={16} /> تسديد

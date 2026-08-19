@@ -7,6 +7,7 @@ import Customers from './components/Customers';
 import SettingsScreen from './components/Settings';
 import CompatibilitySearch from './components/CompatibilitySearch';
 import { DialogProvider } from './components/ui/DialogProvider';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import './index.css';
 
 function App() {
@@ -106,7 +107,7 @@ function App() {
             <div className="header-actions" />
           </header>
 
-          <main className="page-container">{renderContent()}</main>
+          <main className="page-container"><ErrorBoundary key={activeTab}>{renderContent()}</ErrorBoundary></main>
         </div>
       </div>
     </DialogProvider>
