@@ -166,6 +166,19 @@ export default function Operations({ initialFilter, clearInitialFilter, initialM
         return;
       }
 
+      // Auto-add device to quick list if not already present
+      const trimmedDevice = deviceName.trim();
+      if (trimmedDevice && !quickDevices.includes(trimmedDevice)) {
+        await (window as any).api.addQuickListItem('device', trimmedDevice);
+      }
+
+      // Auto-add any new faults to the quick list
+      for (const fault of finalFaults) {
+        if (fault.trim() && !quickFaults.includes(fault.trim())) {
+          await (window as any).api.addQuickListItem('fault', fault.trim());
+        }
+      }
+
       setDeviceName('');
       setDeviceCode('');
       setFaultType('');
