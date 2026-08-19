@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import * as xlsx from 'xlsx';
 import { Search, Plus, Edit, Trash2, Cpu, FileUp, ChevronRight, ChevronLeft, PackageSearch, Box, CheckCircle2 } from 'lucide-react';
 import type { IcCompatibility, ScrapDevice } from '../types';
-import { useDialog } from './ui/DialogProvider';
+import { useDialog } from './ui/DialogContext';
 
 export default function CompatibilitySearch() {
   const [compatibilities, setCompatibilities] = useState<IcCompatibility[]>([]);
@@ -73,28 +73,28 @@ export default function CompatibilitySearch() {
   const paginatedItems = filtered.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
 
   // Cross-reference Logic
-  const getMatchingScrap = (icDevicesStr: string): ScrapDevice | null => {
-    if (!icDevicesStr) return null;
-    const icDeviceList = icDevicesStr.split(/[,=]/).map(d => d.trim().toLowerCase()).filter(Boolean);
-    
-    for (const scrap of scrapDevices) {
-      if (scrap.quantity <= 0) continue; 
-      const scrapNameLower = scrap.device_name.trim().toLowerCase();
-      const scrapModelLower = (scrap.device_model || '').trim().toLowerCase();
-      
-      for (const icD of icDeviceList) {
-        if (
-          icD.includes(scrapNameLower) || scrapNameLower.includes(icD) ||
-          (scrapModelLower && (icD.includes(scrapModelLower) || scrapModelLower.includes(icD)))
-        ) {
-          return scrap;
+  const paginatedItemsWithScrap = useMemo(() => {
+    const getMatchingScrap = (icDevicesStr: string): ScrapDevice | null => {
+      if (!icDevicesStr) return null;
+      const icDeviceList = icDevicesStr.split(/[,=]/).map(d => d.trim().toLowerCase()).filter(Boolean);
+
+      for (const scrap of scrapDevices) {
+        if (scrap.quantity <= 0) continue;
+        const scrapNameLower = scrap.device_name.trim().toLowerCase();
+        const scrapModelLower = (scrap.device_model || '').trim().toLowerCase();
+
+        for (const icD of icDeviceList) {
+          if (
+            icD.includes(scrapNameLower) || scrapNameLower.includes(icD) ||
+            (scrapModelLower && (icD.includes(scrapModelLower) || scrapModelLower.includes(icD)))
+          ) {
+            return scrap;
+          }
         }
       }
-    }
-    return null;
-  };
+      return null;
+    };
 
-  const paginatedItemsWithScrap = useMemo(() => {
     return paginatedItems.map(c => ({
       ...c,
       matchingScrap: getMatchingScrap(c.compatible_devices)

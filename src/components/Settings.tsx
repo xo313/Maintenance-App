@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Settings as SettingsIcon, Users, Sliders, List, Save, Download, AlertTriangle, Moon, Sun, Database, RefreshCw, RotateCcw, FileBox, FileText, Wallet } from 'lucide-react';
+import { Settings as SettingsIcon, Users, Sliders, List, Save, Download, AlertTriangle, Moon, Sun, Database, RotateCcw, FileBox, FileText } from 'lucide-react';
 import type { BackupMetadata, DashboardStats } from '../types';
 import Technicians from './Technicians';
 import QuickLists from './QuickLists';
 import * as XLSX from 'xlsx';
-import { useDialog } from './ui/DialogProvider';
+import { useDialog } from './ui/DialogContext';
 
 export default function Settings() {
   const [activeTab, setActiveTab] = useState('technicians');
@@ -297,7 +297,7 @@ export default function Settings() {
       } else {
         await dialog.error('تعذر إنشاء النسخة الاحتياطية، لذلك لم يتم تنفيذ العملية.');
       }
-    } catch (err) {
+    } catch {
       dialog.close();
       await dialog.error('حدث خطأ أثناء تصدير النسخة الاحتياطية.');
     } finally {
@@ -334,7 +334,7 @@ export default function Settings() {
           await dialog.error('فشلت عملية الاستعادة. لم يتم تغيير البيانات الحالية.');
         }
       }
-    } catch (err: any) {
+    } catch {
       dialog.close();
       await dialog.error('فشلت عملية الاستعادة. لم يتم تغيير البيانات الحالية.');
     } finally {

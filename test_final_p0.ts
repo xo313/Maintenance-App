@@ -69,8 +69,6 @@ import './electron/database';
 import './electron/backup';
 import './electron/main';
 
-const handlers = (global as any).handlers;
-
 async function runTests() {
   console.log('\n====================================');
   console.log('FINAL P0 PATCH TESTS');

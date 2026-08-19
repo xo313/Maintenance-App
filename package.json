@@ -9,10 +9,11 @@
     "dev": "vite",
     "build": "vite build",
     "test": "tsx test_sqlite_suite.ts",
+    "test:e2e": "playwright test",
     "postinstall": "node scripts/postinstall.js",
     "electron:build": "npm run build && electron-builder",
     "build:windows": "npm run build && electron-builder --win",
-    "lint": "oxlint",
+    "lint": "oxlint --ignore-pattern dist-electron/**",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -26,6 +27,7 @@
   },
   "devDependencies": {
     "@electron/packager": "^20.3.0",
+    "@playwright/test": "^1.62.1",
     "@types/better-sqlite3": "^9.6.0",
     "@types/node": "^24.13.3",
     "@types/react": "^19.2.17",

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { TechnicianStats } from "../types";
-import { useDialog } from './ui/DialogProvider';
+import { useDialog } from './ui/DialogContext';
 
 export default function Technicians() {
   const [technicians, setTechnicians] = useState<TechnicianStats[]>([]);

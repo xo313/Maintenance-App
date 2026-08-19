@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { createBackup, readBackup, validateSchema, getCanonicalDatabaseHash } from './electron/backup';
+import { createBackup, readBackup, getCanonicalDatabaseHash } from './electron/backup';
 
 // --- STUB ELECTRON ---
 const mockUserData = path.join(process.cwd(), 'test_userData');
@@ -36,7 +36,7 @@ class SimpleDB {
       fs.writeFileSync(tmpPath, JSON.stringify(dataToWrite, null, 2));
       fs.renameSync(tmpPath, this.dbPath);
       return true;
-    } catch (err) {
+    } catch {
       return false;
     }
   }
@@ -92,7 +92,7 @@ function simulateRestore(filename: string, simulateRollbackSaveFail = false) {
       if (!rbSave || rollbackHash !== originalHash) {
         return { success: false, reason: 'CRITICAL RECOVERY ERROR' };
       }
-    } catch (e) {
+    } catch {
       return { success: false, reason: 'CRITICAL RECOVERY ERROR' };
     }
     return { success: false, reason: 'RESTORE_VERIFY_FAILED' };
@@ -122,7 +122,7 @@ function simulateFactoryReset(simulateSaveFail = false, simulateRollbackSaveFail
       if (!rbSave) return { success: false, reason: 'FACTORY_RESET_ROLLBACK_SAVE_FAILED' };
       db.load();
       if (getCanonicalDatabaseHash(db.data) !== originalHash) return { success: false, reason: 'FACTORY_RESET_ROLLBACK_FAILED' };
-    } catch (e) {
+    } catch {
       return { success: false, reason: 'FACTORY_RESET_ROLLBACK_FAILED' };
     }
     return { success: false, reason: 'FACTORY_RESET_FAILED' };
@@ -139,7 +139,7 @@ function simulateFactoryReset(simulateSaveFail = false, simulateRollbackSaveFail
       if (!rbSave) return { success: false, reason: 'FACTORY_RESET_ROLLBACK_SAVE_FAILED' };
       db.load();
       if (getCanonicalDatabaseHash(db.data) !== originalHash) return { success: false, reason: 'FACTORY_RESET_ROLLBACK_FAILED' };
-    } catch (e) {
+    } catch {
       return { success: false, reason: 'FACTORY_RESET_ROLLBACK_FAILED' };
     }
     return { success: false, reason: 'FACTORY_RESET_FAILED' };

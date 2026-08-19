@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Edit, Trash2, PlusCircle, CheckCircle2 } from 'lucide-react';
 import type { Withdrawal, Technician } from '../types';
-import { useDialog } from './ui/DialogProvider';
+import { useDialog } from './ui/DialogContext';
 
 export default function Withdrawals() {
   const [withdrawals, setWithdrawals] = useState<Withdrawal[]>([]);
