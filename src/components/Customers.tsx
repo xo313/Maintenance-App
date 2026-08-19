@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { Users, Search, Edit, Trash2, PlusCircle, Eye, Phone, X, Clock } from "lucide-react";
 import type { Customer, Operation } from "../types";
-import { useDialog } from "./ui/DialogProvider";
+import { useDialog } from "./ui/DialogContext";
 import { StatusBadge } from "./ui/Badge";
 
 export default function Customers() {

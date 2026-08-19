@@ -24,7 +24,7 @@ if (platform === 'linux') {
     if (report && !report.header.glibcVersionRuntime) {
       prebuiltName = `linuxmusl-${arch}.node`;
     }
-  } catch (_) {}
+  } catch {}
 }
 
 const root = path.resolve(__dirname, '..');

@@ -12,7 +12,7 @@
     "postinstall": "node scripts/postinstall.js",
     "electron:build": "npm run build && electron-builder",
     "build:windows": "npm run build && electron-builder --win",
-    "lint": "oxlint",
+    "lint": "oxlint --ignore-pattern dist-electron/**",
     "preview": "vite preview"
   },
   "dependencies": {

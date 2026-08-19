@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import * as xlsx from 'xlsx';
 import { Edit, Trash2, PlusCircle, PenTool, CheckCircle2, ChevronRight, ChevronLeft, MessageCircle, Eye, Info } from "lucide-react";
 import type { Operation, Technician, Customer } from "../types";
-import { useDialog } from "./ui/DialogProvider";
+import { useDialog } from "./ui/DialogContext";
 import { StatusBadge } from "./ui/Badge";
 import { FileUp } from "lucide-react";
 
@@ -43,7 +43,6 @@ export default function Operations({ initialFilter, clearInitialFilter, initialM
 
   const [price, setPrice] = useState<string>('');
   const [cost, setCost] = useState<string>('');
-  const [paymentStatus, setPaymentStatus] = useState<'cash' | 'debt'>('cash');
   const [status, setStatus] = useState<'under_maintenance' | 'completed' | 'delivered' | 'cancelled'>('under_maintenance');
 
   const [notes, setNotes] = useState<string>('');
@@ -67,7 +66,6 @@ export default function Operations({ initialFilter, clearInitialFilter, initialM
 
   const [editPrice, setEditPrice] = useState<string>('');
   const [editCost, setEditCost] = useState<string>('');
-  const [editPaymentStatus, setEditPaymentStatus] = useState<'cash' | 'debt'>('cash');
   const [editStatus, setEditStatus] = useState<'under_maintenance' | 'completed' | 'delivered' | 'cancelled'>('under_maintenance');
 
   const [editNotes, setEditNotes] = useState<string>('');
@@ -190,7 +188,6 @@ export default function Operations({ initialFilter, clearInitialFilter, initialM
       setCustomerName('');
       setCustomerPhone('');
       setStatus('under_maintenance');
-      setPaymentStatus('cash');
       setNotes('');
       setAccessories('');
       setWarrantyEnabled(false);
@@ -245,8 +242,6 @@ export default function Operations({ initialFilter, clearInitialFilter, initialM
       setEditPrice(op.price ? String(op.price) : '0');
       setEditCost(op.cost ? String(op.cost) : (typeof (op as any).spare_parts_cost === 'number' ? String((op as any).spare_parts_cost) : '0'));
       setEditCostPaid(op.paid_amount !== undefined ? String(op.paid_amount) : '');
-      setEditPaymentStatus(op.payment_status || 'cash');
-
       let initialStatus = op.status;
       if (!initialStatus) {
         initialStatus = 'completed';

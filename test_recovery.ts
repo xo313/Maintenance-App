@@ -1,6 +1,5 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { createBackup, readBackup, validateSchema } from './electron/backup';
 
 // MOCK Electron's app before we do anything else
 const mockUserData = path.join(process.cwd(), 'test_userData');

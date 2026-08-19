@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react';
-import { Wallet, Banknote, TrendingUp, AlertTriangle, FileText, CheckCircle2, Plus, Search, CalendarCheck, Users, Wrench, Smartphone, FileBox, Cpu } from 'lucide-react';
+import { Wallet, Banknote, TrendingUp, AlertTriangle, CheckCircle2, Plus, Wrench, Smartphone, Cpu } from 'lucide-react';
 import type { DashboardStats, Operation } from '../types';
-import { useDialog } from './ui/DialogProvider';
-import { StatusBadge } from './ui/Badge';
+import { useDialog } from './ui/DialogContext';
 export default function Dashboard({ onNavigate }: { onNavigate?: (tab: string, filter?: any, mode?: 'list' | 'add') => void }) {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [debts, setDebts] = useState<Operation[]>([]);

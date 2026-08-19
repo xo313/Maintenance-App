@@ -6,9 +6,10 @@ const mockUserData = path.join(process.cwd(), 'test_userData');
 if (!fs.existsSync(mockUserData)) fs.mkdirSync(mockUserData, { recursive: true });
 
 const app = {
-  getPath: (name) => mockUserData,
+  getPath: (_name) => mockUserData,
   getAppPath: () => process.cwd()
 };
+globalThis.app = app;
 
 // ----------------------------------------------------
 // Inject backup.ts
@@ -20,7 +21,7 @@ backupTsCode = backupTsCode
   .replace(/import { app } from 'electron';/g, '')
   .replace(/export /g, '')
   .replace(/interface BackupMetadata \{[\s\S]*?\}/g, '')
-  .replace(/:\s?[A-Za-z0-9_\[\]<>\(\)]+(?=[,=;{])/g, '') // strip some types
+  .replace(new RegExp(':\\s?[A-Za-z0-9_()<>\\x5B\\x5D]+(?=[,=;{])', 'g'), '') // strip some types
   .replace(/ as any/g, '');
 
 const backupContext = `

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, Trash2, Smartphone, Wrench } from 'lucide-react';
-import { useDialog } from './ui/DialogProvider';
+import { useDialog } from './ui/DialogContext';
 
 export default function QuickLists() {
   const [devices, setDevices] = useState<string[]>([]);

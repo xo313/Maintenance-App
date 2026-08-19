@@ -1,35 +1,6 @@
-import React, { createContext, useContext, useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { CheckCircle, AlertTriangle, Info, AlertCircle, X, Loader2 } from 'lucide-react';
-
-export type DialogType = 'success' | 'error' | 'warning' | 'info' | 'confirm' | 'danger';
-
-export interface DialogOptions {
-  type: DialogType;
-  title?: string;
-  message: string;
-  confirmText?: string;
-  cancelText?: string;
-}
-
-interface DialogContextType {
-  showDialog: (options: DialogOptions) => Promise<boolean>;
-  alert: (message: string, type?: DialogType) => Promise<boolean>;
-  confirm: (message: string, title?: string, isDanger?: boolean) => Promise<boolean>;
-  success: (message: string) => Promise<boolean>;
-  error: (message: string) => Promise<boolean>;
-  loading: (message: string) => void;
-  close: () => void;
-}
-
-const DialogContext = createContext<DialogContextType | undefined>(undefined);
-
-export const useDialog = () => {
-  const context = useContext(DialogContext);
-  if (!context) {
-    throw new Error('useDialog must be used within a DialogProvider');
-  }
-  return context;
-};
+import { DialogContext, type DialogOptions, type DialogType } from './DialogContext';
 
 // Map backend error codes to user-friendly messages
 const errorMap: Record<string, string> = {
@@ -138,7 +109,7 @@ export const DialogProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       }, 50);
     }
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, options]);
+  }, [isOpen, loadingMessage, options]);
 
   const getIcon = () => {
     switch (options?.type) {
