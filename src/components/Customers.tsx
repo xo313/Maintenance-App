@@ -58,10 +58,11 @@ export default function Customers() {
   };
 
   const handleDelete = async (id: number, customerName: string) => {
-    const confirmed = await dialog.confirm({
-      title: "حذف العميل",
-      message: `هل أنت متأكد من رغبتك في حذف العميل "${customerName}"؟ لا يمكن التراجع عن هذا الإجراء.`
-    });
+    const confirmed = await dialog.confirm(
+      `هل أنت متأكد من رغبتك في حذف العميل "${customerName}"؟ لا يمكن التراجع عن هذا الإجراء.`,
+      "حذف العميل",
+      true
+    );
     if (confirmed) {
       const res = await (window as any).api.deleteCustomer(id);
       if (res.success) {
