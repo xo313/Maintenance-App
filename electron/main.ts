@@ -15,7 +15,9 @@ import * as quickListsRepo from './db/repositories/quickListsRepo.js';
 import * as icRepo from './db/repositories/icRepo.js';
 import * as scrapRepo from './db/repositories/scrapRepo.js';
 import * as statsRepo from './db/repositories/statsRepo.js';
-
+import * as cashRepo from './db/repositories/cashRepo.js';
+import * as suppliersRepo from './db/repositories/suppliersRepo.js';
+import * as expensesRepo from './db/repositories/expensesRepo.js';
 let mainWindow: BrowserWindow | null = null;
 
 function createWindow() {
@@ -185,6 +187,38 @@ function setupIPC() {
   ipcMain.handle('delete-withdrawal', (_, id) => {
     return withdrawalsRepo.deleteWithdrawal(id);
   });
+
+  // Suppliers
+  ipcMain.handle('get-suppliers', () => suppliersRepo.getSuppliers());
+  ipcMain.handle('add-supplier', (_, s) => suppliersRepo.addSupplier(s));
+  ipcMain.handle('edit-supplier', (_, id, s) => suppliersRepo.editSupplier(id, s));
+  ipcMain.handle('delete-supplier', (_, id) => suppliersRepo.deleteSupplier(id));
+  ipcMain.handle('get-supplier-purchases', (_, id) => suppliersRepo.getSupplierPurchases(id));
+  ipcMain.handle('get-supplier-payments', (_, id) => suppliersRepo.getSupplierPayments(id));
+  ipcMain.handle('add-supplier-purchase', (_, p) => suppliersRepo.addSupplierPurchase(p));
+  ipcMain.handle('add-supplier-payment', (_, p) => suppliersRepo.addSupplierPayment(p));
+
+  // Shop Expenses
+  ipcMain.handle('get-shop-expenses', () => {
+    const currentMonth = monthsRepo.getCurrentMonth();
+    return expensesRepo.getShopExpenses(currentMonth.id);
+  });
+  ipcMain.handle('add-shop-expense', (_, e) => {
+    const currentMonth = monthsRepo.getCurrentMonth();
+    return expensesRepo.addShopExpense({ ...e, month_id: currentMonth.id });
+  });
+  ipcMain.handle('delete-shop-expense', (_, id) => expensesRepo.deleteShopExpense(id));
+
+  // Cash Ledger
+  ipcMain.handle('get-cash-transactions', () => {
+    const currentMonth = monthsRepo.getCurrentMonth();
+    return cashRepo.getCashTransactionsByMonth(currentMonth.id);
+  });
+  ipcMain.handle('add-cash-transaction', (_, tx) => {
+    const currentMonth = monthsRepo.getCurrentMonth();
+    return cashRepo.addCashTransaction({ ...tx, month_id: currentMonth.id });
+  });
+  ipcMain.handle('delete-cash-transaction', (_, id) => cashRepo.deleteCashTransaction(id));
 
   // Stats
   ipcMain.handle('get-dashboard-stats', () => {

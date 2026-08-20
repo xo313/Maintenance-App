@@ -1,7 +1,7 @@
 {
   "name": "maintenance_app",
   "private": true,
-  "version": "1.0.0-beta.1",
+  "version": "2.0.0",
   "description": "تطبيق إدارة مراكز صيانة الهواتف والأجهزة الإلكترونية",
   "author": "Maintenance App Team",
   "main": "dist-electron/main.js",

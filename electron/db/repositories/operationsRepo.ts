@@ -214,10 +214,15 @@ export function addOperation(op: Partial<Operation>): { success: boolean; data?:
 
       // Record in payments table if any paid amount
       if (paidAmount > 0) {
-        db.prepare(`
+        const payInfo = db.prepare(`
           INSERT INTO payments (operation_id, month_id, amount, paid_at, payment_type, notes)
           VALUES (?, ?, ?, ?, 'cash', 'دفعة تسجيل العملية')
         `).run(id, currentMonth.id, paidAmount, now);
+
+        db.prepare(`
+          INSERT INTO cash_transactions (type, amount, date, month_id, reference_id, description, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+        `).run('CUSTOMER_PAYMENT', paidAmount, op.date || new Date().toLocaleDateString('en-GB'), currentMonth.id, id, 'دفعة مقدمة - عملية #' + id, now);
       }
 
       return id;
@@ -407,6 +412,11 @@ export function payDebt(operationId: number): { success: boolean; data?: Operati
           INSERT INTO payments (operation_id, month_id, amount, paid_at, payment_type, notes)
           VALUES (?, ?, ?, ?, 'cash', 'تسديد دين بالكامل')
         `).run(operationId, currentMonth.id, remainingDebt, now);
+
+        db.prepare(`
+          INSERT INTO cash_transactions (type, amount, date, month_id, reference_id, description, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+        `).run('CUSTOMER_PAYMENT', remainingDebt, now, currentMonth.id, operationId, 'سداد دين - عملية #' + operationId, now);
       }
     });
 

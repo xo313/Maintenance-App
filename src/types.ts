@@ -86,23 +86,81 @@ export interface Withdrawal {
 
 export interface DashboardStats {
   cashBox: number;
-  totalProfit: number;
+  totalSales: number;
+  grossProfit: number;
+  techShare: number;
+  shopOperationProfit: number;
+  totalExpenses: number;
+  netShopProfit: number;
   debtTotal: number;
-  totalWithdrawals: number;
+  supplierPayables: number;
+  technicianPayables: number;
+  receivedDevicesCount: number;
   
-  // New Stats for Reports Card
+  // Legacy fields kept for fallback safety:
+  totalProfit: number;
+  totalWithdrawals: number;
   totalTechProfit: number;
   totalShopProfit: number;
   uncollectedProfit: number;
-  receivedDevicesCount: number;
-  
-  // For compatibility with settlement modal:
   baseCapital: number;
   availableCapital: number;
   tiedCapital: number;
   realizedShopProfit: number;
   totalShopWithdrawal: number;
   shopDue: number;
+}
+
+export interface Supplier {
+  id: number;
+  name: string;
+  phone?: string;
+  notes?: string;
+  created_at: string;
+  total_purchases?: number;
+  total_payments?: number;
+  balance?: number;
+}
+
+export interface SupplierPurchase {
+  id: number;
+  supplier_id: number;
+  month_id: number;
+  date: string;
+  amount: number;
+  description?: string;
+  created_at: string;
+}
+
+export interface SupplierPayment {
+  id: number;
+  supplier_id: number;
+  month_id: number;
+  date: string;
+  amount: number;
+  description?: string;
+  created_at: string;
+}
+
+export interface ShopExpense {
+  id: number;
+  month_id: number;
+  date: string;
+  amount: number;
+  category: string;
+  description?: string;
+  created_at: string;
+}
+
+export interface CashTransaction {
+  id: number;
+  type: 'CUSTOMER_PAYMENT' | 'SUPPLIER_PAYMENT' | 'SHOP_EXPENSE' | 'SHOP_WITHDRAWAL' | 'TECHNICIAN_PAYMENT' | 'OTHER_IN' | 'OTHER_OUT';
+  amount: number;
+  date: string;
+  month_id: number;
+  reference_id?: number;
+  description?: string;
+  created_at: string;
 }
 
 export interface TechnicianStats {

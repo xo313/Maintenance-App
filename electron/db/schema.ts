@@ -1,4 +1,4 @@
-export const CURRENT_SCHEMA_VERSION = 1;
+export const CURRENT_SCHEMA_VERSION = 2;
 
 export const CREATE_TABLES_SQL = `
 CREATE TABLE IF NOT EXISTS settings (
@@ -114,6 +114,55 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
   version INTEGER PRIMARY KEY,
   applied_at TEXT NOT NULL,
   description TEXT
+);
+
+CREATE TABLE IF NOT EXISTS suppliers (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  phone TEXT,
+  notes TEXT,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS supplier_purchases (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  supplier_id INTEGER NOT NULL REFERENCES suppliers(id) ON DELETE RESTRICT,
+  month_id INTEGER NOT NULL REFERENCES months(id) ON DELETE RESTRICT,
+  date TEXT NOT NULL,
+  amount REAL NOT NULL,
+  description TEXT,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS supplier_payments (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  supplier_id INTEGER NOT NULL REFERENCES suppliers(id) ON DELETE RESTRICT,
+  month_id INTEGER NOT NULL REFERENCES months(id) ON DELETE RESTRICT,
+  date TEXT NOT NULL,
+  amount REAL NOT NULL,
+  description TEXT,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS shop_expenses (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  month_id INTEGER NOT NULL REFERENCES months(id) ON DELETE RESTRICT,
+  date TEXT NOT NULL,
+  amount REAL NOT NULL,
+  category TEXT NOT NULL,
+  description TEXT,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS cash_transactions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  type TEXT NOT NULL,
+  amount REAL NOT NULL,
+  date TEXT NOT NULL,
+  month_id INTEGER NOT NULL REFERENCES months(id) ON DELETE RESTRICT,
+  reference_id INTEGER,
+  description TEXT,
+  created_at TEXT NOT NULL
 );
 `;
 

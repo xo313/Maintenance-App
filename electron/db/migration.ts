@@ -107,6 +107,15 @@ export function runAutomaticMigration(): boolean {
     console.log('[SQLite Migration] No legacy database found. Initializing fresh SQLite database.');
     const db = openDatabase();
     seedFreshDatabase(db);
+    const markerPath = getMigrationStatePath();
+    fs.writeFileSync(markerPath, JSON.stringify({
+      source: 'fresh_install',
+      destination: getDatabasePath(),
+      timestamp: new Date().toISOString(),
+      schemaVersion: CURRENT_SCHEMA_VERSION,
+      success: true,
+      isFresh: true
+    }, null, 2), 'utf8');
     return true;
   }
 
@@ -179,6 +188,7 @@ export function runAutomaticMigration(): boolean {
       const operations = Array.isArray(legacyData.operations) ? legacyData.operations : [];
       const insertOp = db.prepare(`INSERT OR REPLACE INTO operations (id, date, month_id, technician_id, customer_id, customer_name, customer_phone, device, device_code, faults, cost, price, tech_profit_percentage, shop_profit, tech_profit, payment_status, status, paid_in_month_id, delivered_in_month_id, paid_at, paid_amount, notes, accessories, warranty_enabled, warranty_days, warranty_note, warranty_expiry_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
       const insertPayment = db.prepare(`INSERT INTO payments (operation_id, month_id, amount, paid_at, payment_type, notes) VALUES (?, ?, ?, ?, ?, ?)`);
+      const insertCash = db.prepare(`INSERT INTO cash_transactions (type, amount, date, month_id, reference_id, description, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`);
 
       const defaultMonthId = months.length > 0 ? months[0].id : 1;
       const validTechIds = new Set(technicians.map((t: any) => t.id));
@@ -197,9 +207,16 @@ export function runAutomaticMigration(): boolean {
         else if (typeof op.faults === 'string' && op.faults.trim()) faultsJson = JSON.stringify([op.faults.trim()]);
         const paidInMonth = op.paid_in_month_id && validMonthIds.has(op.paid_in_month_id) ? op.paid_in_month_id : null;
         const deliveredInMonth = op.delivered_in_month_id && validMonthIds.has(op.delivered_in_month_id) ? op.delivered_in_month_id : null;
-        insertOp.run(op.id, op.date || now.toLocaleDateString('en-GB'), monthId, techId, op.customer_id || null, op.customer_name || 'عميل', op.customer_phone || '', op.device || 'جهاز', op.device_code || null, faultsJson, Number(op.cost) || 0, Number(op.price) || 0, op.tech_profit_percentage !== undefined ? Number(op.tech_profit_percentage) : null, Number(op.shop_profit) || 0, Number(op.tech_profit) || 0, ['cash', 'debt', 'partial'].includes(op.payment_status) ? op.payment_status : 'cash', ['under_maintenance', 'completed', 'delivered', 'cancelled'].includes(op.status) ? op.status : 'delivered', paidInMonth, deliveredInMonth, op.paid_at || null, op.paid_amount !== undefined ? Number(op.paid_amount) : (op.payment_status === 'cash' ? (Number(op.price) || 0) : 0), op.notes || null, op.accessories || null, op.warranty_enabled ? 1 : 0, op.warranty_days ? Number(op.warranty_days) : null, op.warranty_note || null, op.warranty_expiry_date || null);
         const paidAmt = op.paid_amount !== undefined ? Number(op.paid_amount) : (op.payment_status === 'cash' ? (Number(op.price) || 0) : 0);
-        if (paidAmt > 0) insertPayment.run(op.id, paidInMonth || monthId, paidAmt, op.paid_at || op.date || now.toISOString(), 'cash', 'رصيد مدفوع مسجل من البيانات السابقة');
+        const actionDate = op.paid_at || op.date || now.toISOString();
+
+        insertOp.run(op.id, op.date || now.toLocaleDateString('en-GB'), monthId, techId, op.customer_id || null, op.customer_name || 'عميل', op.customer_phone || '', op.device || 'جهاز', op.device_code || null, faultsJson, Number(op.cost) || 0, Number(op.price) || 0, op.tech_profit_percentage !== undefined ? Number(op.tech_profit_percentage) : null, Number(op.shop_profit) || 0, Number(op.tech_profit) || 0, ['cash', 'debt', 'partial'].includes(op.payment_status) ? op.payment_status : 'cash', ['under_maintenance', 'completed', 'delivered', 'cancelled'].includes(op.status) ? op.status : 'delivered', paidInMonth, deliveredInMonth, paidAmt > 0 ? actionDate : null, paidAmt, op.notes || null, op.accessories || null, op.warranty_enabled ? 1 : 0, op.warranty_days ? Number(op.warranty_days) : null, op.warranty_note || null, op.warranty_expiry_date || null);
+        
+        if (paidAmt > 0) {
+          const actMonthId = paidInMonth || monthId;
+          insertPayment.run(op.id, actMonthId, paidAmt, actionDate, 'cash', 'رصيد مدفوع مسجل من البيانات السابقة');
+          insertCash.run('CUSTOMER_PAYMENT', paidAmt, actionDate, actMonthId, op.id, 'دفعة عملية #' + op.id, actionDate);
+        }
       }
 
       const withdrawals = Array.isArray(legacyData.withdrawals) ? legacyData.withdrawals : [];
@@ -207,7 +224,16 @@ export function runAutomaticMigration(): boolean {
       for (const w of withdrawals) {
         const monthId = validMonthIds.has(w.month_id) ? w.month_id : defaultMonthId;
         const techId = w.technician_id && validTechIds.has(w.technician_id) ? w.technician_id : null;
-        insertWithdrawal.run(w.id, w.date || now.toLocaleDateString('en-GB'), Number(w.amount) || 0, w.notes || w.description || '', ['shop_withdrawal', 'tech_withdrawal'].includes(w.type) ? w.type : 'shop_withdrawal', techId, monthId);
+        const wType = ['shop_withdrawal', 'tech_withdrawal'].includes(w.type) ? w.type : 'shop_withdrawal';
+        const wAmount = Number(w.amount) || 0;
+        const wDate = w.date || now.toLocaleDateString('en-GB');
+        const wNotes = w.notes || w.description || '';
+        
+        insertWithdrawal.run(w.id, wDate, wAmount, wNotes, wType, techId, monthId);
+        if (wAmount > 0) {
+          const cashType = wType === 'shop_withdrawal' ? 'SHOP_WITHDRAWAL' : 'TECHNICIAN_PAYMENT';
+          insertCash.run(cashType, wAmount, wDate, monthId, techId, wNotes, wDate);
+        }
       }
 
       const commonDevices = Array.isArray(legacyData.common_devices) ? legacyData.common_devices : [];

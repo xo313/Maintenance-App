@@ -141,6 +141,9 @@ export default function Operations({ initialFilter, clearInitialFilter, initialM
         finalFaults.push(faultType.trim());
       }
 
+      const paid = costPaid ? parseFloat(costPaid) : 0;
+      const paymentStatus = paid >= s && s > 0 ? 'cash' : paid > 0 ? 'partial' : 'debt';
+
       const res = await (window as any).api.addOperation({
         technician_id: Number(techId),
         customer_id: customerId !== '' ? Number(customerId) : undefined,
@@ -152,6 +155,7 @@ export default function Operations({ initialFilter, clearInitialFilter, initialM
         price: s,
         cost: p,
         paid_amount: costPaid ? parseFloat(costPaid) : undefined,
+        payment_status: paymentStatus,
         status: status,
         notes: notes.trim() || undefined,
         accessories: accessories.trim() || undefined,
@@ -282,6 +286,9 @@ export default function Operations({ initialFilter, clearInitialFilter, initialM
         finalEditFaults.push(editFaultType.trim());
       }
 
+      const paid = editCostPaid ? parseFloat(editCostPaid) : 0;
+      const paymentStatus = paid >= s && s > 0 ? 'cash' : paid > 0 ? 'partial' : 'debt';
+
       const res = await (window as any).api.editOperation(editingOp.id, {
         technician_id: Number(editTechId),
         customer_id: editCustomerId !== '' ? Number(editCustomerId) : undefined,
@@ -292,6 +299,7 @@ export default function Operations({ initialFilter, clearInitialFilter, initialM
         price: s,
         cost: p,
         paid_amount: editCostPaid ? parseFloat(editCostPaid) : undefined,
+        payment_status: paymentStatus,
         status: editStatus,
         notes: editNotes.trim() || undefined,
         accessories: editAccessories.trim() || undefined,

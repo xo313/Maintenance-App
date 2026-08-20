@@ -53,6 +53,26 @@ contextBridge.exposeInMainWorld('api', {
   closeMonth: (newCapital: number) => ipcRenderer.invoke('close-month', newCapital),
   closeMonthWithExcel: (newCapital: number) => ipcRenderer.invoke('close-month-with-excel', newCapital),
   
+  // Suppliers
+  getSuppliers: () => ipcRenderer.invoke('get-suppliers'),
+  addSupplier: (s: any) => ipcRenderer.invoke('add-supplier', s),
+  editSupplier: (id: number, s: any) => ipcRenderer.invoke('edit-supplier', id, s),
+  deleteSupplier: (id: number) => ipcRenderer.invoke('delete-supplier', id),
+  getSupplierPurchases: (id: number) => ipcRenderer.invoke('get-supplier-purchases', id),
+  getSupplierPayments: (id: number) => ipcRenderer.invoke('get-supplier-payments', id),
+  addSupplierPurchase: (p: any) => ipcRenderer.invoke('add-supplier-purchase', p),
+  addSupplierPayment: (p: any) => ipcRenderer.invoke('add-supplier-payment', p),
+
+  // Shop Expenses
+  getShopExpenses: () => ipcRenderer.invoke('get-shop-expenses'),
+  addShopExpense: (e: any) => ipcRenderer.invoke('add-shop-expense', e),
+  deleteShopExpense: (id: number) => ipcRenderer.invoke('delete-shop-expense', id),
+
+  // Cash Ledger
+  getCashTransactions: () => ipcRenderer.invoke('get-cash-transactions'),
+  addCashTransaction: (tx: any) => ipcRenderer.invoke('add-cash-transaction', tx),
+  deleteCashTransaction: (id: number) => ipcRenderer.invoke('delete-cash-transaction', id),
+
   // Backup & Reset
   getAllOperations: () => ipcRenderer.invoke('get-all-operations'),
   factoryReset: () => ipcRenderer.invoke('factory-reset'),

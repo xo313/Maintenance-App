@@ -55,24 +55,33 @@ export function addWithdrawal(w: Partial<Withdrawal>): { success: boolean; data?
   const currentMonth = getCurrentMonth();
   const id = w.id || Date.now();
   const type = w.type === 'tech_withdrawal' ? 'tech_withdrawal' : 'shop_withdrawal';
+  const cashType = w.type === 'tech_withdrawal' ? 'TECHNICIAN_PAYMENT' : 'SHOP_WITHDRAWAL';
   const techId = type === 'tech_withdrawal' ? (Number(w.technician_id) || null) : null;
   const monthId = w.month_id || currentMonth.id;
   const amount = Number(w.amount) || 0;
   const notes = w.notes || (w as any).description || '';
+  const dateStr = w.date || new Date().toLocaleDateString('en-GB');
 
   try {
-    db.prepare(`
-      INSERT INTO withdrawals (id, date, amount, notes, type, technician_id, month_id)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      id,
-      w.date || new Date().toLocaleDateString('en-GB'),
-      amount,
-      notes,
-      type,
-      techId,
-      monthId
-    );
+    db.transaction(() => {
+      db.prepare(`
+        INSERT INTO withdrawals (id, date, amount, notes, type, technician_id, month_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        id,
+        dateStr,
+        amount,
+        notes,
+        type,
+        techId,
+        monthId
+      );
+
+      db.prepare(`
+        INSERT INTO cash_transactions (type, amount, date, month_id, reference_id, description, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).run(cashType, amount, dateStr, monthId, id, notes, new Date().toISOString());
+    })();
 
     const created = getWithdrawalById(id);
     return { success: true, data: created || undefined };
@@ -90,6 +99,7 @@ export function editWithdrawal(id: number, updatedW: Partial<Withdrawal>): { suc
   }
 
   const type = updatedW.type !== undefined ? updatedW.type : current.type;
+  const cashType = type === 'tech_withdrawal' ? 'TECHNICIAN_PAYMENT' : 'SHOP_WITHDRAWAL';
   const techId = type === 'tech_withdrawal' 
     ? (updatedW.technician_id !== undefined ? updatedW.technician_id : current.technician_id) 
     : null;
@@ -98,11 +108,19 @@ export function editWithdrawal(id: number, updatedW: Partial<Withdrawal>): { suc
   const date = updatedW.date || current.date;
 
   try {
-    db.prepare(`
-      UPDATE withdrawals
-      SET date = ?, amount = ?, notes = ?, type = ?, technician_id = ?
-      WHERE id = ?
-    `).run(date, amount, notes, type, techId, id);
+    db.transaction(() => {
+      db.prepare(`
+        UPDATE withdrawals
+        SET date = ?, amount = ?, notes = ?, type = ?, technician_id = ?
+        WHERE id = ?
+      `).run(date, amount, notes, type, techId, id);
+
+      db.prepare(`
+        UPDATE cash_transactions
+        SET amount = ?, date = ?, description = ?, type = ?
+        WHERE reference_id = ? AND type IN ('SHOP_WITHDRAWAL', 'TECHNICIAN_PAYMENT')
+      `).run(amount, date, notes, cashType, id);
+    })();
 
     const updated = getWithdrawalById(id);
     return { success: true, data: updated || undefined };
@@ -115,8 +133,13 @@ export function editWithdrawal(id: number, updatedW: Partial<Withdrawal>): { suc
 export function deleteWithdrawal(id: number): { success: boolean; reason?: string } {
   const db = getDB();
   try {
-    const res = db.prepare('DELETE FROM withdrawals WHERE id = ?').run(id);
-    if (res.changes === 0) {
+    let success = false;
+    db.transaction(() => {
+      db.prepare(`DELETE FROM cash_transactions WHERE reference_id = ? AND type IN ('SHOP_WITHDRAWAL', 'TECHNICIAN_PAYMENT')`).run(id);
+      const res = db.prepare('DELETE FROM withdrawals WHERE id = ?').run(id);
+      success = res.changes > 0;
+    })();
+    if (!success) {
       return { success: false, reason: 'NOT_FOUND' };
     }
     return { success: true };

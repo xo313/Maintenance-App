@@ -1,11 +1,13 @@
 import { useState, useEffect } from 'react';
-import { Home, Wrench, Wallet, Settings, Activity, ChevronRight, ChevronLeft, Users, Menu, X } from 'lucide-react';
+import { Home, Wrench, Wallet, Settings, Activity, ChevronRight, ChevronLeft, Users, Menu, X, Truck, FileText } from 'lucide-react';
 import Dashboard from './components/Dashboard';
 import Operations from './components/Operations';
 import Withdrawals from './components/Withdrawals';
 import Customers from './components/Customers';
 import SettingsScreen from './components/Settings';
 import CompatibilitySearch from './components/CompatibilitySearch';
+import Suppliers from './components/Suppliers';
+import Expenses from './components/Expenses';
 import { DialogProvider } from './components/ui/DialogProvider';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import './index.css';
@@ -39,6 +41,8 @@ function App() {
       case 'dashboard': return <Dashboard onNavigate={handleNavigate} />;
       case 'operations': return <Operations initialFilter={initialOperationsFilter} initialMode={operationsMode} clearInitialFilter={() => setInitialOperationsFilter(null)} />;
       case 'customers': return <Customers />;
+      case 'suppliers': return <Suppliers />;
+      case 'expenses': return <Expenses />;
       case 'withdrawals': return <Withdrawals />;
       case 'compatibilities': return <CompatibilitySearch />;
       case 'settings': return <SettingsScreen />;
@@ -51,7 +55,9 @@ function App() {
       case 'dashboard': return 'لوحة التحكم';
       case 'operations': return 'العمليات والصيانة';
       case 'customers': return 'العملاء';
-      case 'withdrawals': return 'السحوبات والمصروفات';
+      case 'suppliers': return 'الموردين';
+      case 'expenses': return 'مصروفات المحل';
+      case 'withdrawals': return 'الخزينة والسحوبات';
       case 'compatibilities': return 'دليل التوافق';
       case 'settings': return 'الإعدادات';
       default: return '';
@@ -60,9 +66,11 @@ function App() {
 
   const navItems = [
     { id: 'dashboard', label: 'لوحة التحكم', icon: Home },
-    { id: 'operations', label: 'العمليات والصيانة', icon: Wrench },
+    { id: 'operations', label: 'العمليات', icon: Wrench },
     { id: 'customers', label: 'العملاء', icon: Users },
-    { id: 'withdrawals', label: 'السحوبات والمصروفات', icon: Wallet },
+    { id: 'suppliers', label: 'الموردين', icon: Truck },
+    { id: 'expenses', label: 'المصروفات', icon: FileText },
+    { id: 'withdrawals', label: 'الخزينة والسحوبات', icon: Wallet },
   ];
 
   return (
@@ -83,7 +91,7 @@ function App() {
 
           <nav className="sidebar-nav" aria-label="التنقل الرئيسي">
             {navItems.map(({ id, label, icon: Icon }) => (
-              <button key={id} className={`nav-item ${activeTab === id ? 'active' : ''}`} onClick={() => handleNavigate(id)} title={isSidebarCollapsed ? label : undefined}>
+              <button key={id} data-testid={`nav-${id}`} className={`nav-item ${activeTab === id ? 'active' : ''}`} onClick={() => handleNavigate(id)} title={isSidebarCollapsed ? label : undefined}>
                 <Icon size={20} />
                 {!isSidebarCollapsed && <span>{label}</span>}
               </button>
@@ -91,7 +99,7 @@ function App() {
           </nav>
 
           <div className="sidebar-footer">
-            <button className={`nav-item ${activeTab === 'settings' ? 'active' : ''}`} onClick={() => handleNavigate('settings')} title={isSidebarCollapsed ? 'الإعدادات' : undefined}>
+            <button data-testid="settings-nav" className={`nav-item ${activeTab === 'settings' ? 'active' : ''}`} onClick={() => handleNavigate('settings')} title={isSidebarCollapsed ? 'الإعدادات' : undefined}>
               <Settings size={20} />
               {!isSidebarCollapsed && <span>الإعدادات</span>}
             </button>
@@ -102,7 +110,7 @@ function App() {
           <header className="app-header">
             <div className="header-leading">
               <button className="mobile-menu-button" onClick={() => setIsMobileMenuOpen(true)} aria-label="فتح القائمة"><Menu size={22} /></button>
-              <div><div className="header-kicker">مركز الصيانة</div><div className="header-title">{getPageTitle()}</div></div>
+              <div><div className="header-kicker">مركز الصيانة</div><div className="header-title" data-testid="page-title">{getPageTitle()}</div></div>
             </div>
             <div className="header-actions" />
           </header>

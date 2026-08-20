@@ -45,99 +45,47 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (tab: string, f
     <div className="fade-in">
       
       <div style={{ marginBottom: 'var(--space-8)' }}>
-        <h2 className="section-title" style={{ marginBottom: 'var(--space-2)' }}>نظرة عامة على النشاط المالي</h2>
-        <p className="caption">ملخص سريع للإيرادات والمصروفات للشهر الحالي.</p>
-      </div>
-
-      <div className="dashboard-stats-grid">
-        <div className="stat-card" style={{ borderTop: '3px solid var(--info)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-            <div className="stat-title">الكاش المتوقع في الصندوق</div>
-            <div style={{ padding: '8px', background: 'var(--info-bg)', borderRadius: 'var(--radius-sm)', color: 'var(--info)' }}>
-              <Wallet size={22} />
-            </div>
+        <h2 className="section-title" style={{ marginBottom: 'var(--space-4)' }}>النظام المالي الموحد</h2>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 'var(--space-4)' }}>
+          <div className="glass" style={{ padding: 'var(--space-4)', borderRadius: 'var(--radius-md)', borderTop: '4px solid var(--success)' }}>
+            <div className="caption" style={{ marginBottom: '4px' }}>الصندوق (السيولة النقدية)</div>
+            <div style={{ fontSize: '1.25rem', fontWeight: 'bold', color: 'var(--success)' }}>{stats.cashBox.toLocaleString()}</div>
           </div>
-          <div className="stat-value" style={{ color: 'var(--info)' }}>
-            {stats.cashBox.toLocaleString()}
+          <div className="glass" style={{ padding: 'var(--space-4)', borderRadius: 'var(--radius-md)', borderTop: '4px solid var(--info)' }}>
+            <div className="caption" style={{ marginBottom: '4px' }}>إجمالي المبيعات</div>
+            <div style={{ fontSize: '1.25rem', fontWeight: 'bold', color: 'var(--info)' }}>{stats.totalSales.toLocaleString()}</div>
           </div>
-          <div className="caption">
-            رأس المال + الاستلام - السحوبات والتكاليف
-          </div>
-        </div>
-
-        <div className="stat-card" style={{ borderTop: '3px solid var(--success)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-            <div className="stat-title">الأرباح الكلية</div>
-            <div style={{ padding: '8px', background: 'var(--success-bg)', borderRadius: 'var(--radius-sm)', color: 'var(--success)' }}>
-              <TrendingUp size={22} />
-            </div>
-          </div>
-          <div className="stat-value" style={{ color: 'var(--success)' }}>
-            {stats.totalProfit.toLocaleString()}
-          </div>
-          <div className="caption">
-            صافي أرباح العمليات (الفرق بين السعر والتكلفة)
-          </div>
-        </div>
-
-        <div className="stat-card" style={{ borderTop: '3px solid var(--warning)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-            <div className="stat-title">إجمالي الديون</div>
-            <div style={{ padding: '8px', background: 'var(--warning-bg)', borderRadius: 'var(--radius-sm)', color: 'var(--warning)' }}>
-              <AlertTriangle size={22} />
-            </div>
-          </div>
-          <div className="stat-value" style={{ color: 'var(--warning)' }}>
-            {stats.debtTotal.toLocaleString()}
-          </div>
-          <div className="caption">
-            المبالغ المتبقية للعمليات غير المسددة
-          </div>
-        </div>
-
-        <div className="stat-card" style={{ borderTop: '3px solid var(--danger)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-            <div className="stat-title">إجمالي السحوبات</div>
-            <div style={{ padding: '8px', background: 'var(--danger-bg)', borderRadius: 'var(--radius-sm)', color: 'var(--danger)' }}>
-              <Banknote size={22} />
-            </div>
-          </div>
-          <div className="stat-value" style={{ color: 'var(--danger)' }}>
-            {stats.totalWithdrawals.toLocaleString()}
-          </div>
-          <div className="caption">
-            مصروفات المحل وسلف الفنيين خلال الشهر الحالي
-          </div>
-        </div>
-      </div>
-
-      {/* New Reports Section */}
-      <div style={{ marginBottom: 'var(--space-8)' }}>
-        <h2 className="section-title" style={{ marginBottom: 'var(--space-4)' }}>التقرير المالي للشهر الحالي</h2>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 'var(--space-4)' }}>
-          <div className="glass" style={{ padding: 'var(--space-4)', borderRadius: 'var(--radius-md)' }}>
-            <div className="caption" style={{ marginBottom: '4px' }}>إجمالي الأرباح</div>
-            <div style={{ fontSize: '1.25rem', fontWeight: 'bold', color: 'var(--success)' }}>{stats.totalProfit.toLocaleString()}</div>
+          <div className="glass" style={{ padding: 'var(--space-4)', borderRadius: 'var(--radius-md)', borderTop: '4px solid var(--primary)' }}>
+            <div className="caption" style={{ marginBottom: '4px' }}>الربح الإجمالي</div>
+            <div style={{ fontSize: '1.25rem', fontWeight: 'bold', color: 'var(--primary)' }}>{stats.grossProfit.toLocaleString()}</div>
           </div>
           <div className="glass" style={{ padding: 'var(--space-4)', borderRadius: 'var(--radius-md)' }}>
             <div className="caption" style={{ marginBottom: '4px' }}>أرباح الفنيين</div>
-            <div style={{ fontSize: '1.25rem', fontWeight: 'bold', color: 'var(--info)' }}>{stats.totalTechProfit.toLocaleString()}</div>
+            <div style={{ fontSize: '1.25rem', fontWeight: 'bold', color: 'var(--text-main)' }}>{stats.techShare.toLocaleString()}</div>
+          </div>
+          <div className="glass" style={{ padding: 'var(--space-4)', borderRadius: 'var(--radius-md)', borderTop: '4px solid var(--accent)' }}>
+            <div className="caption" style={{ marginBottom: '4px' }}>أرباح تشغيل المحل</div>
+            <div style={{ fontSize: '1.25rem', fontWeight: 'bold', color: 'var(--accent)' }}>{stats.shopOperationProfit.toLocaleString()}</div>
+          </div>
+          <div className="glass" style={{ padding: 'var(--space-4)', borderRadius: 'var(--radius-md)', borderTop: '4px solid var(--danger)' }}>
+            <div className="caption" style={{ marginBottom: '4px' }}>مصروفات المحل</div>
+            <div style={{ fontSize: '1.25rem', fontWeight: 'bold', color: 'var(--danger)' }}>{stats.totalExpenses.toLocaleString()}</div>
+          </div>
+          <div className="glass" style={{ padding: 'var(--space-4)', borderRadius: 'var(--radius-md)', borderTop: '4px solid var(--success)' }}>
+            <div className="caption" style={{ marginBottom: '4px' }}>صافي أرباح المحل</div>
+            <div style={{ fontSize: '1.25rem', fontWeight: 'bold', color: 'var(--success)' }}>{stats.netShopProfit.toLocaleString()}</div>
           </div>
           <div className="glass" style={{ padding: 'var(--space-4)', borderRadius: 'var(--radius-md)' }}>
-            <div className="caption" style={{ marginBottom: '4px' }}>أرباح المحل</div>
-            <div style={{ fontSize: '1.25rem', fontWeight: 'bold', color: 'var(--accent)' }}>{stats.totalShopProfit.toLocaleString()}</div>
+            <div className="caption" style={{ marginBottom: '4px' }}>ذمم العملاء (ديون)</div>
+            <div style={{ fontSize: '1.25rem', fontWeight: 'bold', color: 'var(--warning)' }}>{stats.debtTotal.toLocaleString()}</div>
           </div>
           <div className="glass" style={{ padding: 'var(--space-4)', borderRadius: 'var(--radius-md)' }}>
-            <div className="caption" style={{ marginBottom: '4px' }}>أرباح معلقة (غير مسلمة)</div>
-            <div style={{ fontSize: '1.25rem', fontWeight: 'bold', color: 'var(--warning)' }}>{stats.uncollectedProfit.toLocaleString()}</div>
+            <div className="caption" style={{ marginBottom: '4px' }}>ذمم الموردين (التزامات)</div>
+            <div style={{ fontSize: '1.25rem', fontWeight: 'bold', color: 'var(--danger)' }}>{stats.supplierPayables.toLocaleString()}</div>
           </div>
           <div className="glass" style={{ padding: 'var(--space-4)', borderRadius: 'var(--radius-md)' }}>
-            <div className="caption" style={{ marginBottom: '4px' }}>إجمالي ديون العملاء</div>
-            <div style={{ fontSize: '1.25rem', fontWeight: 'bold', color: 'var(--danger)' }}>{stats.debtTotal.toLocaleString()}</div>
-          </div>
-          <div className="glass" style={{ padding: 'var(--space-4)', borderRadius: 'var(--radius-md)' }}>
-            <div className="caption" style={{ marginBottom: '4px' }}>عدد الأجهزة المستلمة</div>
-            <div style={{ fontSize: '1.25rem', fontWeight: 'bold', color: 'var(--text-main)' }}>{stats.receivedDevicesCount}</div>
+            <div className="caption" style={{ marginBottom: '4px' }}>ذمم الفنيين (التزامات)</div>
+            <div style={{ fontSize: '1.25rem', fontWeight: 'bold', color: 'var(--warning)' }}>{stats.technicianPayables.toLocaleString()}</div>
           </div>
         </div>
       </div>

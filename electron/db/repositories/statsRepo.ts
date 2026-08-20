@@ -7,100 +7,93 @@ export function getDashboardStats(): DashboardStats {
   const db = getDB();
   const currentMonth = getCurrentMonth();
   const monthId = currentMonth.id;
-  const baseCapital = Number(currentMonth.start_capital) || 0;
 
-  // 1. Withdrawals
-  const withRes = db.prepare(`
-    SELECT 
-      COALESCE(SUM(amount), 0) as totalWithdrawals,
-      COALESCE(SUM(CASE WHEN type = 'shop_withdrawal' THEN amount ELSE 0 END), 0) as totalShopWithdrawal
-    FROM withdrawals
+  // 1. Cash Balance (From Unified Ledger)
+  const cashRes = db.prepare(`
+    SELECT COALESCE(SUM(
+      CASE WHEN type IN ('CUSTOMER_PAYMENT', 'OTHER_IN') THEN amount
+      ELSE -amount END
+    ), 0) as cashBox
+    FROM cash_transactions
     WHERE month_id = ?
-  `).get(monthId) as { totalWithdrawals: number; totalShopWithdrawal: number };
+  `).get(monthId) as { cashBox: number };
+  
+  const cashBox = (Number(currentMonth.start_capital) || 0) + (Number(cashRes.cashBox) || 0);
 
-  const totalWithdrawals = Number(withRes.totalWithdrawals) || 0;
-  const totalShopWithdrawal = Number(withRes.totalShopWithdrawal) || 0;
-
-  // 2. Current Month Created Operations Cost & Device Count
-  const opsCostRes = db.prepare(`
+  // 2. Sales and Gross Profit (Realized from Delivered operations)
+  const profitRes = db.prepare(`
     SELECT 
-      COALESCE(SUM(cost), 0) as totalOpsCost,
-      COUNT(id) as receivedDevicesCount
-    FROM operations
-    WHERE month_id = ?
-  `).get(monthId) as { totalOpsCost: number; receivedDevicesCount: number };
-
-  const totalOpsCost = Number(opsCostRes.totalOpsCost) || 0;
-  const receivedDevicesCount = Number(opsCostRes.receivedDevicesCount) || 0;
-
-  // 3. Cash inflow in current month
-  // (Cash ops created this month + Partial ops created this month + Past debts paid this month)
-  const cashInflowRes = db.prepare(`
-    SELECT 
-      COALESCE(SUM(
-        CASE 
-          WHEN month_id = ? AND payment_status = 'cash' THEN (CASE WHEN paid_amount IS NOT NULL THEN paid_amount ELSE price END)
-          WHEN month_id = ? AND payment_status = 'partial' THEN COALESCE(paid_amount, 0)
-          WHEN paid_in_month_id = ? AND month_id != ? THEN COALESCE(paid_amount, 0)
-          ELSE 0
-        END
-      ), 0) as totalCashReceived
-    FROM operations
-    WHERE month_id = ? OR paid_in_month_id = ?
-  `).get(monthId, monthId, monthId, monthId, monthId, monthId) as { totalCashReceived: number };
-
-  const totalCashReceived = Number(cashInflowRes.totalCashReceived) || 0;
-  const cashBox = baseCapital + totalCashReceived - totalOpsCost - totalWithdrawals;
-
-  // 4. Realized Profits (Delivered in this month)
-  const realizedProfitRes = db.prepare(`
-    SELECT 
-      COALESCE(SUM(price - cost), 0) as totalProfit,
-      COALESCE(SUM(shop_profit), 0) as totalShopProfit,
-      COALESCE(SUM(tech_profit), 0) as totalTechProfit
+      COALESCE(SUM(price), 0) as totalSales,
+      COALESCE(SUM(cost), 0) as totalCost,
+      COALESCE(SUM(price - cost), 0) as grossProfit,
+      COALESCE(SUM(shop_profit), 0) as shopOperationProfit,
+      COALESCE(SUM(tech_profit), 0) as techShare
     FROM operations
     WHERE delivered_in_month_id = ?
-  `).get(monthId) as { totalProfit: number; totalShopProfit: number; totalTechProfit: number };
+  `).get(monthId) as { totalSales: number; totalCost: number; grossProfit: number; shopOperationProfit: number; techShare: number };
 
-  const totalProfit = Number(realizedProfitRes.totalProfit) || 0;
-  const totalShopProfit = Number(realizedProfitRes.totalShopProfit) || 0;
-  const totalTechProfit = Number(realizedProfitRes.totalTechProfit) || 0;
+  // 3. Shop Expenses
+  const expRes = db.prepare(`
+    SELECT COALESCE(SUM(amount), 0) as totalExpenses
+    FROM shop_expenses
+    WHERE month_id = ?
+  `).get(monthId) as { totalExpenses: number };
 
-  // 5. Total Market Debts
+  const totalExpenses = Number(expRes.totalExpenses) || 0;
+  const netShopProfit = (Number(profitRes.shopOperationProfit) || 0) - totalExpenses;
+
+  // 4. Receivables (Customer Debt)
   const debtRes = db.prepare(`
     SELECT COALESCE(SUM(price - COALESCE(paid_amount, 0)), 0) as debtTotal
     FROM operations
-    WHERE (price - COALESCE(paid_amount, 0)) > 0
+    WHERE payment_status != 'cash' AND (price - COALESCE(paid_amount, 0)) > 0
   `).get() as { debtTotal: number };
-
   const debtTotal = Number(debtRes.debtTotal) || 0;
 
-  // 6. Uncollected Profit (Active in-progress devices created this month)
-  const uncollectedRes = db.prepare(`
-    SELECT COALESCE(SUM(price - cost), 0) as uncollectedProfit
-    FROM operations
-    WHERE month_id = ? AND status NOT IN ('delivered', 'cancelled')
-  `).get(monthId) as { uncollectedProfit: number };
+  // 5. Payables (Suppliers)
+  const suppRes = db.prepare(`
+    SELECT 
+      (SELECT COALESCE(SUM(amount), 0) FROM supplier_purchases) - 
+      (SELECT COALESCE(SUM(amount), 0) FROM supplier_payments) as supplierPayables
+  `).get() as { supplierPayables: number };
+  const supplierPayables = Number(suppRes.supplierPayables) || 0;
 
-  const uncollectedProfit = Number(uncollectedRes.uncollectedProfit) || 0;
-  const shopDue = totalShopProfit - totalShopWithdrawal;
+  // 6. Payables (Technicians) - using historical total earned vs paid
+  const techPayablesRes = db.prepare(`
+    SELECT 
+      (SELECT COALESCE(SUM(tech_profit), 0) FROM operations WHERE status = 'delivered') -
+      (SELECT COALESCE(SUM(amount), 0) FROM cash_transactions WHERE type = 'TECHNICIAN_PAYMENT') as techPayables
+  `).get() as { techPayables: number };
+  const technicianPayables = Number(techPayablesRes.techPayables) || 0;
 
+  // Additional backwards-compatible stats
+  const opsCostRes = db.prepare(`SELECT COUNT(id) as c FROM operations WHERE month_id = ?`).get(monthId) as { c: number };
+  
   return {
     cashBox,
-    totalProfit,
+    totalSales: Number(profitRes.totalSales) || 0,
+    grossProfit: Number(profitRes.grossProfit) || 0,
+    techShare: Number(profitRes.techShare) || 0,
+    shopOperationProfit: Number(profitRes.shopOperationProfit) || 0,
+    totalExpenses,
+    netShopProfit,
     debtTotal,
-    totalWithdrawals,
-    totalTechProfit,
-    totalShopProfit,
-    uncollectedProfit,
-    receivedDevicesCount,
-    baseCapital,
+    supplierPayables,
+    technicianPayables,
+    receivedDevicesCount: opsCostRes.c,
+    // Keep old properties so React doesn't break entirely if missed somewhere, but their values are mapped to the new reality
+    totalProfit: Number(profitRes.grossProfit) || 0,
+    totalWithdrawals: totalExpenses, // approximated mapping
+    totalTechProfit: Number(profitRes.techShare) || 0,
+    totalShopProfit: Number(profitRes.shopOperationProfit) || 0,
+    uncollectedProfit: 0,
+    baseCapital: Number(currentMonth.start_capital) || 0,
     availableCapital: cashBox,
-    tiedCapital: totalOpsCost,
-    realizedShopProfit: totalShopProfit,
-    totalShopWithdrawal,
-    shopDue
-  };
+    tiedCapital: Number(profitRes.totalCost) || 0,
+    realizedShopProfit: netShopProfit,
+    totalShopWithdrawal: 0,
+    shopDue: netShopProfit
+  } as any;
 }
 
 export function getTechnicianStats(): TechnicianStats[] {
@@ -110,21 +103,18 @@ export function getTechnicianStats(): TechnicianStats[] {
   const technicians = getAllTechnicians();
 
   return technicians.map(tech => {
-    // 1. Cost of parts for ops created in this month
     const costRes = db.prepare(`
       SELECT COALESCE(SUM(cost), 0) as totalCost
       FROM operations
       WHERE technician_id = ? AND month_id = ?
     `).get(tech.id, monthId) as { totalCost: number };
 
-    // 2. Realized profit (Delivered in this month)
     const profitRes = db.prepare(`
       SELECT COALESCE(SUM(tech_profit), 0) as totalProfit
       FROM operations
       WHERE technician_id = ? AND delivered_in_month_id = ?
     `).get(tech.id, monthId) as { totalProfit: number };
 
-    // 3. Unrealized profit on outstanding debts
     const unrealizedRes = db.prepare(`
       SELECT COALESCE(SUM(tech_profit), 0) as unrealizedProfit
       FROM operations
@@ -133,11 +123,10 @@ export function getTechnicianStats(): TechnicianStats[] {
         AND (price - COALESCE(paid_amount, 0)) > 0
     `).get(tech.id) as { unrealizedProfit: number };
 
-    // 4. Withdrawals in this month
     const withRes = db.prepare(`
       SELECT COALESCE(SUM(amount), 0) as totalWithdrawal
-      FROM withdrawals
-      WHERE technician_id = ? AND month_id = ? AND type = 'tech_withdrawal'
+      FROM cash_transactions
+      WHERE reference_id = ? AND month_id = ? AND type = 'TECHNICIAN_PAYMENT'
     `).get(tech.id, monthId) as { totalWithdrawal: number };
 
     const totalCost = Number(costRes.totalCost) || 0;

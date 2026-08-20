@@ -56,10 +56,50 @@ export function initSchema(db: Database.Database): void {
   db.exec(CREATE_INDEXES_SQL);
 
   // Check and record schema migration version
-  const checkMigration = db.prepare('SELECT version FROM schema_migrations WHERE version = ?').get(CURRENT_SCHEMA_VERSION);
-  if (!checkMigration) {
+  const v1Exists = db.prepare('SELECT version FROM schema_migrations WHERE version = 1').get();
+  if (!v1Exists) {
     db.prepare('INSERT OR IGNORE INTO schema_migrations (version, applied_at, description) VALUES (?, ?, ?)')
-      .run(CURRENT_SCHEMA_VERSION, new Date().toISOString(), 'Initial SQLite schema');
+      .run(1, new Date().toISOString(), 'Initial SQLite schema');
+  }
+
+  const v2Exists = db.prepare('SELECT version FROM schema_migrations WHERE version = 2').get();
+  if (!v2Exists) {
+    console.log('[SQLite] Running migration to Schema V2 (Cash Ledger & Suppliers)...');
+    db.transaction(() => {
+      // Migrate Payments (All Customer Payments including initial and debt payments)
+      db.prepare(`
+        INSERT INTO cash_transactions (type, amount, date, month_id, reference_id, description, created_at)
+        SELECT 
+          'CUSTOMER_PAYMENT', 
+          amount, 
+          paid_at, 
+          month_id, 
+          operation_id, 
+          COALESCE(notes, 'دفعة عملية #' || operation_id), 
+          paid_at
+        FROM payments
+        WHERE amount > 0
+      `).run();
+
+      // Migrate Withdrawals
+      db.prepare(`
+        INSERT INTO cash_transactions (type, amount, date, month_id, reference_id, description, created_at)
+        SELECT 
+          CASE WHEN type = 'shop_withdrawal' THEN 'SHOP_WITHDRAWAL' ELSE 'TECHNICIAN_PAYMENT' END,
+          amount, 
+          date, 
+          month_id, 
+          technician_id, 
+          notes, 
+          date
+        FROM withdrawals
+        WHERE amount > 0
+      `).run();
+
+      db.prepare('INSERT OR IGNORE INTO schema_migrations (version, applied_at, description) VALUES (?, ?, ?)')
+        .run(CURRENT_SCHEMA_VERSION, new Date().toISOString(), 'Added unified cash ledger and suppliers');
+    })();
+    console.log('[SQLite] Migration to Schema V2 completed.');
   }
 }
 

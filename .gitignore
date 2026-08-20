@@ -41,3 +41,5 @@ test_db_p0.json
 *.tmp
 playwright-report/
 test-results/
+test_regression_db/
+scratch/

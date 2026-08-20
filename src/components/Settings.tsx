@@ -429,6 +429,7 @@ export default function Settings() {
         {/* Settings Sidebar */}
         <div style={{ width: '240px', display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
           <button 
+            data-testid="tab-technicians"
             className={`btn ${activeTab === 'technicians' ? 'active' : ''}`}
             onClick={() => setActiveTab('technicians')}
             style={{ 
@@ -445,6 +446,7 @@ export default function Settings() {
           </button>
           
           <button 
+            data-testid="tab-quicklists"
             className={`btn ${activeTab === 'quicklists' ? 'active' : ''}`}
             onClick={() => setActiveTab('quicklists')}
             style={{ 
@@ -461,6 +463,7 @@ export default function Settings() {
           </button>
 
           <button 
+            data-testid="tab-general"
             className={`btn ${activeTab === 'general' ? 'active' : ''}`}
             onClick={() => setActiveTab('general')}
             style={{ 
@@ -477,6 +480,7 @@ export default function Settings() {
           </button>
 
           <button 
+            data-testid="tab-monthly_closing"
             className={`btn ${activeTab === 'monthly_closing' ? 'active' : ''}`}
             onClick={() => setActiveTab('monthly_closing')}
             style={{ 
