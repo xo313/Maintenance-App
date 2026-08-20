@@ -115,19 +115,17 @@ export function addOperation(op: Partial<Operation>): { success: boolean; data?:
   const cost = Number(op.cost) || 0;
   const profit = price - cost;
 
-  // Resolve technician
   const techId = Number(op.technician_id) || 1;
   const tech = getTechnicianById(techId);
-  const techPercentage = op.tech_profit_percentage !== undefined 
-    ? Number(op.tech_profit_percentage) 
+  const techPercentage = op.tech_profit_percentage !== undefined
+    ? Number(op.tech_profit_percentage)
     : (tech ? tech.profit_percentage : 0.5);
 
   const techProfit = profit * techPercentage;
   const shopProfit = profit - techProfit;
 
-  // Payment calculations
-  const paymentStatus = ['cash', 'debt', 'partial'].includes(op.payment_status as string) 
-    ? (op.payment_status as 'cash' | 'debt' | 'partial') 
+  const paymentStatus = ['cash', 'debt', 'partial'].includes(op.payment_status as string)
+    ? (op.payment_status as 'cash' | 'debt' | 'partial')
     : 'cash';
 
   let paidAmount = 0;
@@ -147,7 +145,6 @@ export function addOperation(op: Partial<Operation>): { success: boolean; data?:
 
   try {
     const addTx = db.transaction(() => {
-      // Resolve or create customer
       let custId = op.customer_id;
       if (op.customer_name && op.customer_name.trim()) {
         const existingCust = findCustomerByNameOrPhone(op.customer_name, op.customer_phone);
@@ -212,9 +209,8 @@ export function addOperation(op: Partial<Operation>): { success: boolean; data?:
         op.warranty_expiry_date?.trim() || null
       );
 
-      // Record in payments table if any paid amount
       if (paidAmount > 0) {
-        const payInfo = db.prepare(`
+        db.prepare(`
           INSERT INTO payments (operation_id, month_id, amount, paid_at, payment_type, notes)
           VALUES (?, ?, ?, ?, 'cash', 'دفعة تسجيل العملية')
         `).run(id, currentMonth.id, paidAmount, now);
@@ -245,14 +241,13 @@ export function editOperation(opId: number, updatedOp: Partial<Operation>): { su
   }
 
   const currentMonth = getCurrentMonth();
-
   const price = updatedOp.price !== undefined ? Number(updatedOp.price) : current.price;
   const cost = updatedOp.cost !== undefined ? Number(updatedOp.cost) : current.cost;
   const profit = price - cost;
 
   const techId = updatedOp.technician_id !== undefined ? Number(updatedOp.technician_id) : current.technician_id;
   const tech = getTechnicianById(techId);
-  const techPercentage = updatedOp.tech_profit_percentage !== undefined 
+  const techPercentage = updatedOp.tech_profit_percentage !== undefined
     ? Number(updatedOp.tech_profit_percentage)
     : (current.tech_profit_percentage !== undefined ? current.tech_profit_percentage : (tech ? tech.profit_percentage : 0.5));
 
@@ -275,19 +270,14 @@ export function editOperation(opId: number, updatedOp: Partial<Operation>): { su
   let deliveredInMonth = current.delivered_in_month_id;
 
   if (status === 'delivered') {
-    if (!deliveredInMonth) {
-      deliveredInMonth = currentMonth.id;
-    }
+    if (!deliveredInMonth) deliveredInMonth = currentMonth.id;
   } else {
     deliveredInMonth = undefined;
   }
 
   let paidInMonth = current.paid_in_month_id;
-  if (paidAmount > 0 && !paidInMonth) {
-    paidInMonth = currentMonth.id;
-  } else if (paidAmount === 0) {
-    paidInMonth = undefined;
-  }
+  if (paidAmount > 0 && !paidInMonth) paidInMonth = currentMonth.id;
+  else if (paidAmount === 0) paidInMonth = undefined;
 
   try {
     const editTx = db.transaction(() => {
@@ -332,13 +322,30 @@ export function editOperation(opId: number, updatedOp: Partial<Operation>): { su
         opId
       );
 
-      // Record difference in payments table
-      const previousPaid = current.paid_amount || 0;
-      if (paidAmount > previousPaid) {
+      // Reconcile the operation's cumulative paid amount with the cash ledger.
+      // This fixes both increases and decreases, including legacy operations
+      // whose payment rows existed without a matching cash transaction.
+      const ledgerPaidRow = db.prepare(`
+        SELECT COALESCE(SUM(amount), 0) AS total
+        FROM cash_transactions
+        WHERE type = 'CUSTOMER_PAYMENT' AND reference_id = ?
+      `).get(opId) as { total: number };
+      const ledgerPaid = Number(ledgerPaidRow?.total) || 0;
+      const delta = paidAmount - ledgerPaid;
+
+      if (Math.abs(delta) > 0.000001) {
+        const now = new Date().toISOString();
+        const note = delta > 0 ? 'دفعة إضافية من تعديل العملية' : 'تصحيح دفعات تعديل العملية';
+
         db.prepare(`
           INSERT INTO payments (operation_id, month_id, amount, paid_at, payment_type, notes)
-          VALUES (?, ?, ?, ?, 'cash', 'دفعة إضافية من تعديل العملية')
-        `).run(opId, currentMonth.id, paidAmount - previousPaid, new Date().toISOString());
+          VALUES (?, ?, ?, ?, 'cash', ?)
+        `).run(opId, currentMonth.id, delta, now, note);
+
+        db.prepare(`
+          INSERT INTO cash_transactions (type, amount, date, month_id, reference_id, description, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+        `).run('CUSTOMER_PAYMENT', delta, now, currentMonth.id, opId, note + ' - عملية #' + opId, now);
       }
     });
 
@@ -355,7 +362,13 @@ export function deleteOperation(opId: number): { success: boolean; reason?: stri
   const db = getDB();
   try {
     const deleteTx = db.transaction(() => {
-      db.prepare('DELETE FROM payments WHERE operation_id = ?').run(opId);
+      // Remove all cash movements generated by this operation before the
+      // operation itself is deleted. payments are removed by FK cascade.
+      db.prepare(`
+        DELETE FROM cash_transactions
+        WHERE type = 'CUSTOMER_PAYMENT' AND reference_id = ?
+      `).run(opId);
+
       const res = db.prepare('DELETE FROM operations WHERE id = ?').run(opId);
       if (res.changes === 0) {
         throw new Error('NOT_FOUND');
