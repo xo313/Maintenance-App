@@ -164,6 +164,14 @@ CREATE TABLE IF NOT EXISTS cash_transactions (
   description TEXT,
   created_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS legacy_migration_state (
+  id INTEGER PRIMARY KEY CHECK(id = 1),
+  status TEXT NOT NULL,
+  source_hash TEXT,
+  error TEXT,
+  updated_at TEXT NOT NULL
+);
 `;
 
 export const CREATE_INDEXES_SQL = `

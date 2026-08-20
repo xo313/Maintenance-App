@@ -2,7 +2,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { app } from 'electron';
-import Database from 'better-sqlite3';
+// @ts-ignore
+const req = typeof globalThis.require === 'function' ? globalThis.require : require;
+const Database = req('better-sqlite3');
 import { getDB, getDatabasePath, closeDB, openDatabase, isIntegrityOk } from './connection.js';
 import { CURRENT_SCHEMA_VERSION } from './schema.js';
 

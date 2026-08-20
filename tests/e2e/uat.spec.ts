@@ -10,7 +10,7 @@ type Session = { app: ElectronApplication; page: Page; userData: string };
 async function openApp(): Promise<Session> {
   const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'maintenance-app-uat-'));
   const app = await electron.launch({
-    args: [path.join(projectRoot, 'dist-electron/main.js')],
+    executablePath: process.env.CI ? undefined : path.join(projectRoot, 'release_final2', 'win-unpacked', 'Maintenance App.exe'),
     env: { ...process.env, TEST_USER_DATA: userData, ISOLATED_TEST_APPDATA: userData },
   });
   const page = await app.firstWindow();

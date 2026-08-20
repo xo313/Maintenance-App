@@ -1,7 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { app, dialog } from 'electron';
-import Database from 'better-sqlite3';
+// @ts-ignore
+const req = typeof globalThis.require === 'function' ? globalThis.require : require;
+const Database = req('better-sqlite3');
 import { getDatabasePath, openDatabase, isIntegrityOk } from './connection.js';
 import { validateSchema, getCanonicalDatabaseHash } from '../backup.js';
 import { CURRENT_SCHEMA_VERSION } from './schema.js';
@@ -41,29 +43,32 @@ export function findLegacyDatabase(): string | null {
   return null;
 }
 
-function getMigrationStatePath(): string {
-  const currentDataPath = process.env.TEST_USER_DATA || (app && typeof app.getPath === 'function' ? app.getPath('userData') : path.join(process.cwd(), 'test_userData'));
-  return path.join(currentDataPath, 'migration-state.json');
-}
-
-function hasCurrentSchema(db: Database.Database): boolean {
+function getMigrationState(dbPath: string): { status: string, error?: string } | null {
   try {
-    const row = db.prepare('SELECT MAX(version) as version FROM schema_migrations').get() as { version: number | null };
-    return Number(row?.version || 0) >= CURRENT_SCHEMA_VERSION;
+    const db = new Database(dbPath, { fileMustExist: true });
+    // In WAL mode, ensure we can read safely.
+    const row = db.prepare('SELECT status, error FROM legacy_migration_state WHERE id = 1').get() as { status: string, error: string | null } | undefined;
+    db.close();
+    if (row) {
+      return { status: row.status, error: row.error || undefined };
+    }
+    return null;
   } catch {
-    return false;
+    return null; // Table doesn't exist or DB is unreadable
   }
 }
 
-function hasVerifiedMigrationState(dbPath: string): boolean {
-  const statePath = getMigrationStatePath();
-  if (!fs.existsSync(statePath)) return false;
-  try {
-    const state = JSON.parse(fs.readFileSync(statePath, 'utf8'));
-    return state?.success === true && state?.destination === dbPath && Number(state?.schemaVersion || 0) >= CURRENT_SCHEMA_VERSION;
-  } catch {
-    return false;
-  }
+function setMigrationState(db: Database.Database, status: string, sourceHash: string | null, error: string | null) {
+  const now = new Date().toISOString();
+  db.prepare(`
+    INSERT INTO legacy_migration_state (id, status, source_hash, error, updated_at) 
+    VALUES (1, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET 
+      status = excluded.status,
+      source_hash = COALESCE(excluded.source_hash, legacy_migration_state.source_hash),
+      error = excluded.error,
+      updated_at = excluded.updated_at
+  `).run(status, sourceHash, error, now);
 }
 
 export function runAutomaticMigration(): boolean {
@@ -75,27 +80,47 @@ export function runAutomaticMigration(): boolean {
   if (fs.existsSync(dbPath)) {
     try {
       const db = openDatabase();
-      if (isIntegrityOk(db) && hasCurrentSchema(db)) {
-        if (hasVerifiedMigrationState(dbPath)) {
+      
+      // Determine if schema is V2 or higher
+      const row = db.prepare('SELECT MAX(version) as version FROM schema_migrations').get() as { version: number | null };
+      const hasCurrentSchema = Number(row?.version || 0) >= CURRENT_SCHEMA_VERSION;
+      
+      if (isIntegrityOk(db) && hasCurrentSchema) {
+        const state = db.prepare('SELECT status FROM legacy_migration_state WHERE id = 1').get() as { status: string } | undefined;
+        
+        if (state?.status === 'COMPLETED' || state?.status === 'ADOPTED') {
           console.log('[SQLite Migration] Existing SQLite database is verified. Skipping migration.');
           return true;
         }
 
-        // A database may have been created fresh by the current application and
-        // therefore legitimately has no legacy migration marker. Do not overwrite
-        // a populated DB; only accept it as fresh when it is structurally empty.
-        const opsCount = (db.prepare('SELECT count(*) as count FROM operations').get() as { count: number }).count;
-        const monthsCount = (db.prepare('SELECT count(*) as count FROM months').get() as { count: number }).count;
-        const customersCount = (db.prepare('SELECT count(*) as count FROM customers').get() as { count: number }).count;
-        const techniciansCount = (db.prepare('SELECT count(*) as count FROM technicians').get() as { count: number }).count;
-        if (opsCount === 0 && monthsCount <= 1 && customersCount === 0 && techniciansCount === 0) {
-          console.log('[SQLite Migration] Fresh SQLite database detected. No legacy migration required.');
-          return true;
-        }
+        // If migration is explicitly marked as FAILED or IN_PROGRESS, we must recover it, not adopt it.
+        if (state?.status !== 'FAILED' && state?.status !== 'IN_PROGRESS') {
+          // A database may have been created fresh by the current application.
+          const opsCount = (db.prepare('SELECT count(*) as count FROM operations').get() as { count: number }).count;
+          const monthsCount = (db.prepare('SELECT count(*) as count FROM months').get() as { count: number }).count;
+          const customersCount = (db.prepare('SELECT count(*) as count FROM customers').get() as { count: number }).count;
+          const techniciansCount = (db.prepare('SELECT count(*) as count FROM technicians').get() as { count: number }).count;
+          const hasSettings = (db.prepare('SELECT count(*) as count FROM settings').get() as { count: number }).count > 0;
+          
+          if (opsCount === 0 && monthsCount <= 1 && customersCount === 0 && techniciansCount === 0) {
+            console.log('[SQLite Migration] Fresh SQLite database detected. No legacy migration required.');
+            setMigrationState(db, 'COMPLETED', 'fresh_install', null);
+            return true;
+          }
 
-        console.error('[SQLite Migration] Existing populated SQLite database has no verified migration state. Refusing automatic migration to prevent data loss.');
-        showMigrationError('قاعدة SQLite موجودة وتحتوي بيانات، لكن حالة الترحيل غير موثقة. تم إيقاف التشغيل لحماية بياناتك.');
-        return false;
+          // --- SAFE ADOPTION LOGIC ---
+          // If we reach here, the database is populated and has V2 schema, but no migration marker.
+          // It could be a database created by a V2 dev version, or a restored V2 backup.
+          if (hasSettings && monthsCount > 0) {
+             console.log('[SQLite Migration] Populated V2 database detected without migration marker. Proceeding with Safe Adoption.');
+             setMigrationState(db, 'ADOPTED', 'safe_adoption', null);
+             return true;
+          }
+
+          console.error('[SQLite Migration] Existing populated SQLite database is unrecognized (missing markers and fails adoption). Halting.');
+          showMigrationError('تم العثور على قاعدة بيانات موجودة تحتاج إلى التحقق قبل الترحيل. تم إيقاف التشغيل للحماية.');
+          return false;
+        }
       }
     } catch (e) {
       console.warn('[SQLite Migration] Existing DB verification warning:', e);
@@ -107,15 +132,7 @@ export function runAutomaticMigration(): boolean {
     console.log('[SQLite Migration] No legacy database found. Initializing fresh SQLite database.');
     const db = openDatabase();
     seedFreshDatabase(db);
-    const markerPath = getMigrationStatePath();
-    fs.writeFileSync(markerPath, JSON.stringify({
-      source: 'fresh_install',
-      destination: getDatabasePath(),
-      timestamp: new Date().toISOString(),
-      schemaVersion: CURRENT_SCHEMA_VERSION,
-      success: true,
-      isFresh: true
-    }, null, 2), 'utf8');
+    setMigrationState(db, 'COMPLETED', 'fresh_install', null);
     return true;
   }
 
@@ -162,9 +179,31 @@ export function runAutomaticMigration(): boolean {
   }
 
   const db = openDatabase();
+  
+  // Check if we are recovering from IN_PROGRESS or FAILED state
+  const state = db.prepare('SELECT status FROM legacy_migration_state WHERE id = 1').get() as { status: string } | undefined;
+  if (state?.status === 'IN_PROGRESS' || state?.status === 'FAILED') {
+      console.log(`[SQLite Migration] Recovering from ${state.status} migration state...`);
+  }
+  
+  setMigrationState(db, 'IN_PROGRESS', sourceHash, null);
 
   try {
     const migrateTx = db.transaction(() => {
+      // CLEAR all tables to ensure idempotency if running on a partially populated DB
+      db.prepare('DELETE FROM cash_transactions').run();
+      db.prepare('DELETE FROM payments').run();
+      db.prepare('DELETE FROM withdrawals').run();
+      db.prepare('DELETE FROM operations').run();
+      db.prepare('DELETE FROM customers').run();
+      db.prepare('DELETE FROM technicians').run();
+      db.prepare('DELETE FROM months').run();
+      db.prepare('DELETE FROM settings').run();
+      db.prepare('DELETE FROM ic_compatibilities').run();
+      db.prepare('DELETE FROM scrap_devices').run();
+      db.prepare('DELETE FROM common_devices').run();
+      db.prepare('DELETE FROM common_faults').run();
+      
       const settings = legacyData.settings || {};
       db.prepare(`INSERT OR REPLACE INTO settings (id, base_capital, shop_name, whatsapp_template, theme) VALUES (1, ?, ?, ?, ?)`)
         .run(settings.base_capital || 0, settings.shop_name || 'مركز الصيانة', settings.whatsapp_template || 'السلام عليكم [اسم_الزبون] 👋\nنود إعلامك بأن جهازك ([اسم_الجهاز]) قد تمت صيانته وهو جاهز للاستلام.\nالمبلغ المطلوب: [المبلغ]\nشكراً لاختيارك مركزنا! 🛠️✨', settings.theme || 'dark');
@@ -277,22 +316,17 @@ export function runAutomaticMigration(): boolean {
       throw new Error(`Financial sum mismatch: Price(${sqliteSums.total_price}/${jsonTotalPrice}), Cost(${sqliteSums.total_cost}/${jsonTotalCost}), ShopProfit(${sqliteSums.total_shop_profit}/${jsonTotalShopProfit}), TechProfit(${sqliteSums.total_tech_profit}/${jsonTotalTechProfit})`);
     }
 
-    const markerPath = getMigrationStatePath();
-    fs.writeFileSync(markerPath, JSON.stringify({
-      source: legacyDbPath,
-      destination: dbPath,
-      timestamp: now.toISOString(),
-      sourceHash,
-      schemaVersion: CURRENT_SCHEMA_VERSION,
-      appVersion: (app && typeof app.getVersion === 'function') ? app.getVersion() : '1.0.0-beta.1',
-      success: true,
-      records: { operations: verifyOpsCount, technicians: verifyTechsCount, months: verifyMonthsCount, withdrawals: verifyWithsCount }
-    }, null, 2), 'utf8');
+    setMigrationState(db, 'COMPLETED', sourceHash, null);
 
     console.log('[SQLite Migration] Migration completed and verified with 100% data integrity!');
     return true;
   } catch (err: any) {
     console.error('[SQLite Migration] Migration transaction failed:', err);
+    try {
+      setMigrationState(db, 'FAILED', sourceHash, err?.message || String(err));
+    } catch(e) {
+      // In case db itself is closed/corrupted
+    }
     showMigrationError('فشل ترحيل البيانات إلى SQLite: ' + (err?.message || err) + '\nتم التراجع والبيانات القديمة في أمان.');
     return false;
   }
