@@ -24,13 +24,22 @@ async function closeApp(s: Session) {
 }
 
 async function go(page: Page, name: string) {
-  await page.getByRole('button', { name, exact: true }).click();
+  const nav = page.locator('button').filter({ hasText: name }).first();
+  await expect(nav).toBeVisible({ timeout: 10_000 });
+  await nav.click();
+  await page.waitForTimeout(250);
+}
+
+async function openSettingsTab(page: Page, name: string) {
+  await go(page, 'الإعدادات');
+  const tab = page.locator('button').filter({ hasText: name }).first();
+  await expect(tab).toBeVisible({ timeout: 10_000 });
+  await tab.click();
   await page.waitForTimeout(250);
 }
 
 async function ensureTechnician(page: Page, name = 'UAT Technician') {
-  await go(page, 'الإعدادات');
-  await page.getByRole('button', { name: 'إدارة الفنيين', exact: true }).click();
+  await openSettingsTab(page, 'إدارة الفنيين');
   const existing = page.getByText(name, { exact: true }).first();
   if (!(await existing.isVisible().catch(() => false))) {
     await page.getByLabel('اسم الفني', { exact: true }).fill(name);
@@ -54,10 +63,12 @@ async function addOperation(page: Page, data: { customer: string; phone?: string
   await go(page, 'العمليات والصيانة');
   await page.getByRole('button', { name: 'عملية جديدة', exact: true }).click();
   await expect(page.getByRole('button', { name: 'إضافة العملية', exact: true })).toBeVisible();
-  await page.getByLabel('الفني', { exact: true }).selectOption({ label: /UAT Technician/ }).catch(async () => {
-    const techSelect = page.getByLabel('الفني', { exact: true });
+  const techSelect = page.getByLabel('الفني', { exact: true });
+  try {
+    await techSelect.selectOption({ label: /UAT Technician/ });
+  } catch {
     await techSelect.selectOption({ index: 1 });
-  });
+  }
   await page.getByLabel('العميل', { exact: true }).fill(data.customer);
   if (data.phone) await page.getByLabel('رقم الهاتف (اختياري)', { exact: true }).fill(data.phone);
   await page.getByLabel('اسم الجهاز', { exact: true }).fill(data.device || 'UAT Phone');
@@ -81,6 +92,19 @@ async function confirmDialog(page: Page) {
   const dialog = page.locator('[role="dialog"]');
   const confirm = dialog.getByRole('button').last();
   if (await confirm.isVisible().catch(() => false)) await confirm.click();
+}
+
+async function ensureBackupAvailable(page: Page) {
+  await openSettingsTab(page, 'إعدادات عامة');
+  const backups = page.getByText(/النسخ المتوفرة/).first();
+  if (!(await page.getByRole('button', { name: 'إنشاء نسخة احتياطية الآن', exact: true }).isVisible().catch(() => false))) {
+    await expect(backups).toBeVisible({ timeout: 10_000 });
+  }
+  const restoreButtons = page.getByRole('button', { name: /استعادة/ });
+  if (await restoreButtons.count() === 0) {
+    await page.getByRole('button', { name: 'إنشاء نسخة احتياطية الآن', exact: true }).click();
+    await expect(page.getByText(/تم إنشاء نسخة احتياطية كاملة/)).toBeVisible({ timeout: 10_000 });
+  }
 }
 
 // 01-06: shell / UX
@@ -126,11 +150,11 @@ test('UAT-31: opens withdrawals page', async () => { const s = await openApp(); 
 test('UAT-32: adds a shop withdrawal', async () => { const s = await openApp(); try { await go(s.page, 'السحوبات والمصروفات'); await s.page.getByLabel('المبلغ', { exact: true }).fill('1000'); await s.page.getByLabel('البيان / الوصف', { exact: true }).fill('UAT shop expense'); await s.page.getByRole('button', { name: 'إضافة سحب', exact: true }).click(); await expect(s.page.getByText('UAT shop expense', { exact: true })).toBeVisible(); } finally { await closeApp(s); } });
 test('UAT-33: edits a shop withdrawal', async () => { const s = await openApp(); try { await go(s.page, 'السحوبات والمصروفات'); await s.page.getByLabel('المبلغ', { exact: true }).fill('1000'); await s.page.getByLabel('البيان / الوصف', { exact: true }).fill('UAT edit 33'); await s.page.getByRole('button', { name: 'إضافة سحب', exact: true }).click(); const row = await operationRow(s.page, 'UAT edit 33'); await row.getByRole('button', { name: 'تعديل' }).click(); await s.page.getByLabel('المبلغ', { exact: true }).fill('2000'); await s.page.getByRole('button', { name: 'حفظ التعديل', exact: true }).click(); await expect((await operationRow(s.page, 'UAT edit 33')).getByText('2000.00')).toBeVisible(); } finally { await closeApp(s); } });
 test('UAT-34: deletes a withdrawal', async () => { const s = await openApp(); try { await go(s.page, 'السحوبات والمصروفات'); await s.page.getByLabel('المبلغ', { exact: true }).fill('1000'); await s.page.getByLabel('البيان / الوصف', { exact: true }).fill('UAT delete 34'); await s.page.getByRole('button', { name: 'إضافة سحب', exact: true }).click(); const row = await operationRow(s.page, 'UAT delete 34'); await row.getByRole('button', { name: 'حذف' }).click(); await confirmDialog(s.page); await expect(s.page.getByText('UAT delete 34', { exact: true })).toHaveCount(0); } finally { await closeApp(s); } });
-test('UAT-35: creates a technician withdrawal after creating prerequisite technician', async () => { const s = await openApp(); try { await ensureTechnician(s.page); await go(s.page, 'الإعدادات'); await s.page.getByRole('button', { name: 'إدارة الفنيين', exact: true }).click(); const card = s.page.getByText('UAT Technician', { exact: true }).locator('..').locator('..'); await card.getByRole('button', { name: 'تسجيل سحب نقدي' }).click(); await s.page.getByLabel('مبلغ السحب', { exact: true }).fill('500'); await s.page.getByRole('button', { name: 'تسجيل السحب', exact: true }).click(); await expect(card).toBeVisible(); } finally { await closeApp(s); } });
-test('UAT-36: changes the shop name in general settings', async () => { const s = await openApp(); try { await go(s.page, 'الإعدادات'); await s.page.getByRole('button', { name: /الإعدادات العامة/ }).click(); await s.page.getByLabel('اسم المركز (Shop Name)', { exact: true }).fill('UAT Service Center'); await s.page.getByRole('button', { name: 'حفظ الإعدادات', exact: true }).click(); await expect(s.page.getByText(/تم حفظ الإعدادات بنجاح/)).toBeVisible(); } finally { await closeApp(s); } });
-test('UAT-37: toggles light and dark theme', async () => { const s = await openApp(); try { await go(s.page, 'الإعدادات'); await s.page.getByRole('button', { name: /الإعدادات العامة/ }).click(); await s.page.getByRole('button', { name: 'نهاري', exact: true }).click(); await expect(s.page.locator('html')).toHaveClass(/light/); await s.page.getByRole('button', { name: 'ليلي', exact: true }).click(); await expect(s.page.locator('html')).not.toHaveClass(/light/); } finally { await closeApp(s); } });
+test('UAT-35: creates a technician withdrawal after creating prerequisite technician', async () => { const s = await openApp(); try { await ensureTechnician(s.page); await openSettingsTab(s.page, 'إدارة الفنيين'); const card = s.page.locator('.glass').filter({ hasText: 'UAT Technician' }).first(); await card.getByRole('button', { name: 'تسجيل سحب نقدي' }).click(); await s.page.getByLabel('مبلغ السحب', { exact: true }).fill('500'); await s.page.getByRole('button', { name: 'تسجيل السحب', exact: true }).click(); await expect(card).toBeVisible(); } finally { await closeApp(s); } });
+test('UAT-36: changes the shop name in general settings', async () => { const s = await openApp(); try { await openSettingsTab(s.page, 'إعدادات عامة'); await s.page.getByLabel('اسم المركز (Shop Name)', { exact: true }).fill('UAT Service Center'); await s.page.getByRole('button', { name: 'حفظ الإعدادات', exact: true }).click(); await expect(s.page.getByText(/تم حفظ الإعدادات بنجاح/)).toBeVisible({ timeout: 10_000 }); } finally { await closeApp(s); } });
+test('UAT-37: toggles light and dark theme', async () => { const s = await openApp(); try { await openSettingsTab(s.page, 'إعدادات عامة'); await s.page.getByRole('button', { name: 'نهاري', exact: true }).click(); await expect(s.page.locator('html')).toHaveClass(/light/); await s.page.getByRole('button', { name: 'ليلي', exact: true }).click(); await expect(s.page.locator('html')).not.toHaveClass(/light/); } finally { await closeApp(s); } });
 
 // 38-40: backup / restore / persistence
-test('UAT-38: creates a JSON backup from the UI', async () => { const s = await openApp(); try { await go(s.page, 'الإعدادات'); await s.page.getByRole('button', { name: /الإعدادات العامة/ }).click(); await s.page.getByRole('button', { name: 'إنشاء نسخة احتياطية الآن', exact: true }).click(); await expect(s.page.getByText(/تم إنشاء نسخة احتياطية كاملة/)).toBeVisible(); } finally { await closeApp(s); } });
-test('UAT-39: restore requires explicit confirmation', async () => { const s = await openApp(); try { await go(s.page, 'الإعدادات'); await s.page.getByRole('button', { name: /الإعدادات العامة/ }).click(); await s.page.getByRole('button', { name: 'إنشاء نسخة احتياطية الآن', exact: true }).click(); await expect(s.page.getByRole('button', { name: /استعادة/ }).first()).toBeVisible(); await s.page.getByRole('button', { name: /استعادة/ }).first().click(); await expect(s.page.getByText(/سيتم استبدال بيانات البرنامج الحالية/)).toBeVisible(); } finally { await closeApp(s); } });
+test('UAT-38: creates a JSON backup from the UI', async () => { const s = await openApp(); try { await openSettingsTab(s.page, 'إعدادات عامة'); await s.page.getByRole('button', { name: 'إنشاء نسخة احتياطية الآن', exact: true }).click(); await expect(s.page.getByText(/تم إنشاء نسخة احتياطية كاملة/)).toBeVisible({ timeout: 10_000 }); await expect(s.page.getByText(/النسخ المتوفرة/)).toBeVisible(); } finally { await closeApp(s); } });
+test('UAT-39: restore requires an existing backup file and explicit confirmation', async () => { const s = await openApp(); try { await ensureBackupAvailable(s.page); const restore = s.page.getByRole('button', { name: /استعادة/ }).first(); await expect(restore).toBeVisible(); await restore.click(); await expect(s.page.getByText(/سيتم استبدال بيانات البرنامج الحالية/)).toBeVisible(); } finally { await closeApp(s); } });
 test('UAT-40: operation data survives an Electron restart', async () => { const s = await openApp(); try { await ensureTechnician(s.page); await addOperation(s.page, { customer: 'UAT Restart 40', price: '10000', cost: '1000', paid: '10000' }); await s.app.close(); s.app = await electron.launch({ args: [path.join(projectRoot, 'dist-electron/main.js')], env: { ...process.env, TEST_USER_DATA: s.userData, ISOLATED_TEST_APPDATA: s.userData } }); s.page = await s.app.firstWindow(); await s.page.waitForLoadState('domcontentloaded'); await expect(s.page.getByText('لوحة التحكم', { exact: true }).first()).toBeVisible({ timeout: 15_000 }); await go(s.page, 'العمليات والصيانة'); await expect(s.page.getByText('UAT Restart 40', { exact: true })).toBeVisible(); } finally { await closeApp(s); } });
