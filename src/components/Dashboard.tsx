@@ -47,7 +47,7 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (tab: string, f
       <div style={{ marginBottom: 'var(--space-8)' }}>
         <h2 className="section-title" style={{ marginBottom: 'var(--space-4)' }}>النظام المالي الموحد</h2>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 'var(--space-4)' }}>
-          <div className="glass" style={{ padding: 'var(--space-4)', borderRadius: 'var(--radius-md)', borderTop: '4px solid var(--success)' }}>
+          <div className="glass" style={{ padding: 'var(--space-4)', borderRadius: 'var(--radius-md)', borderTop: '4px solid var(--success)' }} title="يشمل: رأس المال + مقبوضات الشهر + تسديد ديون سابقة - السحوبات">
             <div className="caption" style={{ marginBottom: '4px' }}>الصندوق (السيولة النقدية)</div>
             <div style={{ fontSize: '1.25rem', fontWeight: 'bold', color: 'var(--success)' }}>{stats.cashBox.toLocaleString()}</div>
           </div>
@@ -67,10 +67,7 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (tab: string, f
             <div className="caption" style={{ marginBottom: '4px' }}>أرباح تشغيل المحل</div>
             <div style={{ fontSize: '1.25rem', fontWeight: 'bold', color: 'var(--accent)' }}>{stats.shopOperationProfit.toLocaleString()}</div>
           </div>
-          <div className="glass" style={{ padding: 'var(--space-4)', borderRadius: 'var(--radius-md)', borderTop: '4px solid var(--danger)' }}>
-            <div className="caption" style={{ marginBottom: '4px' }}>مصروفات المحل</div>
-            <div style={{ fontSize: '1.25rem', fontWeight: 'bold', color: 'var(--danger)' }}>{stats.totalExpenses.toLocaleString()}</div>
-          </div>
+
           <div className="glass" style={{ padding: 'var(--space-4)', borderRadius: 'var(--radius-md)', borderTop: '4px solid var(--success)' }}>
             <div className="caption" style={{ marginBottom: '4px' }}>صافي أرباح المحل</div>
             <div style={{ fontSize: '1.25rem', fontWeight: 'bold', color: 'var(--success)' }}>{stats.netShopProfit.toLocaleString()}</div>
@@ -79,10 +76,7 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (tab: string, f
             <div className="caption" style={{ marginBottom: '4px' }}>ذمم العملاء (ديون)</div>
             <div style={{ fontSize: '1.25rem', fontWeight: 'bold', color: 'var(--warning)' }}>{stats.debtTotal.toLocaleString()}</div>
           </div>
-          <div className="glass" style={{ padding: 'var(--space-4)', borderRadius: 'var(--radius-md)' }}>
-            <div className="caption" style={{ marginBottom: '4px' }}>ذمم الموردين (التزامات)</div>
-            <div style={{ fontSize: '1.25rem', fontWeight: 'bold', color: 'var(--danger)' }}>{stats.supplierPayables.toLocaleString()}</div>
-          </div>
+
           <div className="glass" style={{ padding: 'var(--space-4)', borderRadius: 'var(--radius-md)' }}>
             <div className="caption" style={{ marginBottom: '4px' }}>ذمم الفنيين (التزامات)</div>
             <div style={{ fontSize: '1.25rem', fontWeight: 'bold', color: 'var(--warning)' }}>{stats.technicianPayables.toLocaleString()}</div>
@@ -107,8 +101,8 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (tab: string, f
             <div style={{ padding: '8px', background: 'var(--info-bg)', borderRadius: 'var(--radius-sm)', color: 'var(--info)', width: 'fit-content' }}>
               <Wrench size={24} />
             </div>
-            <div className="stat-title" style={{ fontSize: '1.1rem', color: 'var(--text)' }}>العمليات</div>
-            <div className="caption">{operations.length} عملية (الشهر الحالي)</div>
+            <div className="stat-title" style={{ fontSize: '1.1rem', color: 'var(--text)' }}>عمليات الشهر الحالي</div>
+            <div className="caption">{operations.length} عملية (لا يشمل العمليات المسلمة سابقاً)</div>
           </div>
 
           {/* 3. قيد الصيانة */}

@@ -23,6 +23,18 @@ export function getDB(): Database.Database {
 export function openDatabase(customPath?: string): Database.Database {
   const isDefaultPath = !customPath || customPath === getDatabasePath();
   const dbPath = customPath || getDatabasePath();
+
+  // Safety check to prevent DEV from writing to STABLE db
+  const isDev = process.env.VITE_APP_ENV === 'development';
+  if (isDev) {
+    const appDataRaw = (app && typeof app.getPath === 'function') ? app.getPath('appData') : process.cwd();
+    const stableDbPath = path.join(appDataRaw, 'maintenance_app', 'maintenance.db');
+    if (dbPath === stableDbPath) {
+      console.error('FATAL ERROR: Development environment is trying to open the STABLE database. Halting to protect data.');
+      process.exit(1);
+    }
+  }
+
   const dbDir = path.dirname(dbPath);
 
   if (!fs.existsSync(dbDir)) {
@@ -99,9 +111,18 @@ export function initSchema(db: Database.Database): void {
       `).run();
 
       db.prepare('INSERT OR IGNORE INTO schema_migrations (version, applied_at, description) VALUES (?, ?, ?)')
-        .run(CURRENT_SCHEMA_VERSION, new Date().toISOString(), 'Added unified cash ledger and suppliers');
+        .run(2, new Date().toISOString(), 'Added unified cash ledger and suppliers');
     })();
     console.log('[SQLite] Migration to Schema V2 completed.');
+  }
+
+  const v3Exists = db.prepare('SELECT version FROM schema_migrations WHERE version = 3').get();
+  if (!v3Exists) {
+    console.log('[SQLite] Running migration to Schema V3 (Zero Out Current Month Capital)...');
+    db.prepare('UPDATE months SET start_capital = 0 WHERE is_closed = 0').run();
+    db.prepare('INSERT OR IGNORE INTO schema_migrations (version, applied_at, description) VALUES (?, ?, ?)')
+      .run(CURRENT_SCHEMA_VERSION, new Date().toISOString(), 'Zero out current month start capital');
+    console.log('[SQLite] Migration to Schema V3 completed.');
   }
 }
 

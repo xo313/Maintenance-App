@@ -221,6 +221,13 @@ export function addOperation(op: Partial<Operation>): { success: boolean; data?:
         `).run('CUSTOMER_PAYMENT', paidAmount, op.date || new Date().toLocaleDateString('en-GB'), currentMonth.id, id, 'دفعة مقدمة - عملية #' + id, now);
       }
 
+      if (cost > 0) {
+        db.prepare(`
+          INSERT INTO cash_transactions (type, amount, date, month_id, reference_id, description, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+        `).run('SPARE_PART_COST', cost, op.date || new Date().toLocaleDateString('en-GB'), currentMonth.id, id, 'تكلفة قطع غيار نقداً - عملية #' + id, now);
+      }
+
       return id;
     });
 
@@ -322,9 +329,6 @@ export function editOperation(opId: number, updatedOp: Partial<Operation>): { su
         opId
       );
 
-      // Reconcile the operation's cumulative paid amount with the cash ledger.
-      // This fixes both increases and decreases, including legacy operations
-      // whose payment rows existed without a matching cash transaction.
       const ledgerPaidRow = db.prepare(`
         SELECT COALESCE(SUM(amount), 0) AS total
         FROM cash_transactions
@@ -347,6 +351,24 @@ export function editOperation(opId: number, updatedOp: Partial<Operation>): { su
           VALUES (?, ?, ?, ?, ?, ?, ?)
         `).run('CUSTOMER_PAYMENT', delta, now, currentMonth.id, opId, note + ' - عملية #' + opId, now);
       }
+
+      const ledgerCostRow = db.prepare(`
+        SELECT COALESCE(SUM(amount), 0) AS total
+        FROM cash_transactions
+        WHERE type = 'SPARE_PART_COST' AND reference_id = ?
+      `).get(opId) as { total: number };
+      const ledgerCost = Number(ledgerCostRow?.total) || 0;
+      const costDelta = cost - ledgerCost;
+
+      if (Math.abs(costDelta) > 0.000001) {
+        const now = new Date().toISOString();
+        const note = costDelta > 0 ? 'تكلفة إضافية لقطعة غيار نقداً' : 'استرداد فارق تكلفة القطعة';
+        
+        db.prepare(`
+          INSERT INTO cash_transactions (type, amount, date, month_id, reference_id, description, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+        `).run('SPARE_PART_COST', costDelta, now, currentMonth.id, opId, note + ' - عملية #' + opId, now);
+      }
     });
 
     editTx();
@@ -366,7 +388,7 @@ export function deleteOperation(opId: number): { success: boolean; reason?: stri
       // operation itself is deleted. payments are removed by FK cascade.
       db.prepare(`
         DELETE FROM cash_transactions
-        WHERE type = 'CUSTOMER_PAYMENT' AND reference_id = ?
+        WHERE type IN ('CUSTOMER_PAYMENT', 'SPARE_PART_COST') AND reference_id = ?
       `).run(opId);
 
       const res = db.prepare('DELETE FROM operations WHERE id = ?').run(opId);

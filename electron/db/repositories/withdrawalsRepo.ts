@@ -53,7 +53,7 @@ export function getWithdrawalById(id: number): Withdrawal | null {
 export function addWithdrawal(w: Partial<Withdrawal>): { success: boolean; data?: Withdrawal; reason?: string } {
   const db = getDB();
   const currentMonth = getCurrentMonth();
-  const id = w.id || Date.now();
+  const id = w.id || (Date.now() + Math.floor(Math.random() * 1000));
   const type = w.type === 'tech_withdrawal' ? 'tech_withdrawal' : 'shop_withdrawal';
   const cashType = w.type === 'tech_withdrawal' ? 'TECHNICIAN_PAYMENT' : 'SHOP_WITHDRAWAL';
   const techId = type === 'tech_withdrawal' ? (Number(w.technician_id) || null) : null;

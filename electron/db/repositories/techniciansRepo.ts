@@ -31,7 +31,7 @@ export function getTechnicianById(id: number): Technician | null {
 
 export function addTechnician(name: string, profit_percentage: number): { success: boolean; data?: Technician; reason?: string } {
   const db = getDB();
-  const id = Date.now();
+  const id = Date.now() + Math.floor(Math.random() * 1000);
   const percentage = Number(profit_percentage) || 0;
 
   try {

@@ -6,8 +6,6 @@ import Withdrawals from './components/Withdrawals';
 import Customers from './components/Customers';
 import SettingsScreen from './components/Settings';
 import CompatibilitySearch from './components/CompatibilitySearch';
-import Suppliers from './components/Suppliers';
-import Expenses from './components/Expenses';
 import { DialogProvider } from './components/ui/DialogProvider';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import './index.css';
@@ -41,8 +39,6 @@ function App() {
       case 'dashboard': return <Dashboard onNavigate={handleNavigate} />;
       case 'operations': return <Operations initialFilter={initialOperationsFilter} initialMode={operationsMode} clearInitialFilter={() => setInitialOperationsFilter(null)} />;
       case 'customers': return <Customers />;
-      case 'suppliers': return <Suppliers />;
-      case 'expenses': return <Expenses />;
       case 'withdrawals': return <Withdrawals />;
       case 'compatibilities': return <CompatibilitySearch />;
       case 'settings': return <SettingsScreen />;
@@ -55,8 +51,6 @@ function App() {
       case 'dashboard': return 'لوحة التحكم';
       case 'operations': return 'العمليات والصيانة';
       case 'customers': return 'العملاء';
-      case 'suppliers': return 'الموردين';
-      case 'expenses': return 'مصروفات المحل';
       case 'withdrawals': return 'الخزينة والسحوبات';
       case 'compatibilities': return 'دليل التوافق';
       case 'settings': return 'الإعدادات';
@@ -68,8 +62,6 @@ function App() {
     { id: 'dashboard', label: 'لوحة التحكم', icon: Home },
     { id: 'operations', label: 'العمليات', icon: Wrench },
     { id: 'customers', label: 'العملاء', icon: Users },
-    { id: 'suppliers', label: 'الموردين', icon: Truck },
-    { id: 'expenses', label: 'المصروفات', icon: FileText },
     { id: 'withdrawals', label: 'الخزينة والسحوبات', icon: Wallet },
   ];
 

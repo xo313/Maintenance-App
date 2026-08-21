@@ -1,18 +1,19 @@
 {
-  "name": "maintenance_app",
+  "name": "maintenance_app_beta",
   "private": true,
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "تطبيق إدارة مراكز صيانة الهواتف والأجهزة الإلكترونية",
   "author": "Maintenance App Team",
   "main": "dist-electron/main.js",
   "scripts": {
-    "dev": "vite",
+    "dev": "cross-env VITE_APP_ENV=development vite",
     "build": "vite build",
     "test": "tsx test_sqlite_suite.ts",
     "test:e2e": "playwright test",
     "postinstall": "node scripts/postinstall.js",
     "electron:build": "npm run build && electron-builder",
     "build:windows": "npm run build && electron-builder --win",
+    "build:dev": "cross-env VITE_APP_ENV=development npm run build && electron-builder --win -c electron-builder-dev.json",
     "lint": "oxlint --ignore-pattern dist-electron/**",
     "preview": "vite preview"
   },
@@ -33,6 +34,7 @@
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.4",
+    "cross-env": "^10.1.0",
     "electron": "^43.4.0",
     "electron-builder": "^26.15.3",
     "oxlint": "^1.75.0",
@@ -43,8 +45,8 @@
     "vite-plugin-electron-renderer": "^1.0.0"
   },
   "build": {
-    "appId": "com.maintenance.app",
-    "productName": "Maintenance App",
+    "appId": "com.maintenance.app.beta",
+    "productName": "Maintenance App Beta",
     "directories": {
       "output": "release_final2"
     },

@@ -90,10 +90,8 @@ export interface DashboardStats {
   grossProfit: number;
   techShare: number;
   shopOperationProfit: number;
-  totalExpenses: number;
   netShopProfit: number;
   debtTotal: number;
-  supplierPayables: number;
   technicianPayables: number;
   receivedDevicesCount: number;
   
@@ -111,50 +109,11 @@ export interface DashboardStats {
   shopDue: number;
 }
 
-export interface Supplier {
-  id: number;
-  name: string;
-  phone?: string;
-  notes?: string;
-  created_at: string;
-  total_purchases?: number;
-  total_payments?: number;
-  balance?: number;
-}
 
-export interface SupplierPurchase {
-  id: number;
-  supplier_id: number;
-  month_id: number;
-  date: string;
-  amount: number;
-  description?: string;
-  created_at: string;
-}
-
-export interface SupplierPayment {
-  id: number;
-  supplier_id: number;
-  month_id: number;
-  date: string;
-  amount: number;
-  description?: string;
-  created_at: string;
-}
-
-export interface ShopExpense {
-  id: number;
-  month_id: number;
-  date: string;
-  amount: number;
-  category: string;
-  description?: string;
-  created_at: string;
-}
 
 export interface CashTransaction {
   id: number;
-  type: 'CUSTOMER_PAYMENT' | 'SUPPLIER_PAYMENT' | 'SHOP_EXPENSE' | 'SHOP_WITHDRAWAL' | 'TECHNICIAN_PAYMENT' | 'OTHER_IN' | 'OTHER_OUT';
+  type: 'CUSTOMER_PAYMENT' | 'SHOP_WITHDRAWAL' | 'TECHNICIAN_PAYMENT' | 'OTHER_IN' | 'OTHER_OUT' | 'OPENING_BALANCE';
   amount: number;
   date: string;
   month_id: number;

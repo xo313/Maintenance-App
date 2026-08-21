@@ -1,6 +1,12 @@
 import './pre-init.js';
 import { app, BrowserWindow, ipcMain, dialog } from 'electron';
 import path from 'node:path';
+
+// MUST BE SET BEFORE DB IS ACCESSED
+if (process.env.VITE_APP_ENV === 'development') {
+    app.setPath('userData', path.join(app.getPath('appData'), 'maintenance_app_dev'));
+}
+
 import fs from 'node:fs';
 import { getDB, isIntegrityOk, closeDB } from './db/connection.js';
 import { runAutomaticMigration } from './db/migration.js';
@@ -16,8 +22,6 @@ import * as icRepo from './db/repositories/icRepo.js';
 import * as scrapRepo from './db/repositories/scrapRepo.js';
 import * as statsRepo from './db/repositories/statsRepo.js';
 import * as cashRepo from './db/repositories/cashRepo.js';
-import * as suppliersRepo from './db/repositories/suppliersRepo.js';
-import * as expensesRepo from './db/repositories/expensesRepo.js';
 let mainWindow: BrowserWindow | null = null;
 
 function createWindow() {
@@ -94,8 +98,12 @@ function setupIPC() {
   });
 
   ipcMain.handle('restart-app', () => {
-    app.relaunch();
-    app.exit(0);
+    if (process.env.VITE_APP_ENV === 'development') {
+      app.relaunch({ args: process.argv.slice(1).concat(['--relaunch']) });
+    } else {
+      app.relaunch();
+    }
+    app.quit();
   });
 
   // Technicians
@@ -188,26 +196,7 @@ function setupIPC() {
     return withdrawalsRepo.deleteWithdrawal(id);
   });
 
-  // Suppliers
-  ipcMain.handle('get-suppliers', () => suppliersRepo.getSuppliers());
-  ipcMain.handle('add-supplier', (_, s) => suppliersRepo.addSupplier(s));
-  ipcMain.handle('edit-supplier', (_, id, s) => suppliersRepo.editSupplier(id, s));
-  ipcMain.handle('delete-supplier', (_, id) => suppliersRepo.deleteSupplier(id));
-  ipcMain.handle('get-supplier-purchases', (_, id) => suppliersRepo.getSupplierPurchases(id));
-  ipcMain.handle('get-supplier-payments', (_, id) => suppliersRepo.getSupplierPayments(id));
-  ipcMain.handle('add-supplier-purchase', (_, p) => suppliersRepo.addSupplierPurchase(p));
-  ipcMain.handle('add-supplier-payment', (_, p) => suppliersRepo.addSupplierPayment(p));
 
-  // Shop Expenses
-  ipcMain.handle('get-shop-expenses', () => {
-    const currentMonth = monthsRepo.getCurrentMonth();
-    return expensesRepo.getShopExpenses(currentMonth.id);
-  });
-  ipcMain.handle('add-shop-expense', (_, e) => {
-    const currentMonth = monthsRepo.getCurrentMonth();
-    return expensesRepo.addShopExpense({ ...e, month_id: currentMonth.id });
-  });
-  ipcMain.handle('delete-shop-expense', (_, id) => expensesRepo.deleteShopExpense(id));
 
   // Cash Ledger
   ipcMain.handle('get-cash-transactions', () => {

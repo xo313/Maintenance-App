@@ -40,6 +40,9 @@ export async function createSQLiteBackup(isManual = false): Promise<{ success: b
     const db = getDB();
     if (!isIntegrityOk(db)) throw new Error('DATABASE_CORRUPTED_BEFORE_BACKUP');
 
+    // Force flush WAL to the main file before creating backup so we don't miss recent operations
+    db.pragma('wal_checkpoint(TRUNCATE)');
+
     const backupDir = getBackupDir();
     const now = new Date();
     const pad = (n: number) => n.toString().padStart(2, '0');
@@ -149,6 +152,7 @@ export async function restoreSQLiteBackup(filename: string): Promise<{ success: 
     if (!isIntegrityOk(restoredDb)) throw new Error('RESTORED_DB_INTEGRITY_FAILED');
 
     console.log(`[SQLite Restore] Successfully restored database from: ${filename}`);
+    closeDB(); // CRITICAL: Close the DB handle so app.exit(0) doesn't corrupt it
     return { success: true };
   } catch (err: any) {
     console.error('[SQLite Restore] Restore failed, attempting rollback:', err);
