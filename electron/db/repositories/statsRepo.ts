@@ -37,7 +37,26 @@ export function getDashboardStats(): DashboardStats {
     WHERE status = 'delivered' AND COALESCE(delivered_in_month_id, month_id) = ?
   `).get(monthId) as { totalSales: number; totalCost: number; grossProfit: number; shopOperationProfit: number; techShare: number };
 
-  const netShopProfit = Number(profitRes.shopOperationProfit) || 0;
+  // 2.b REALIZED Shop Profit (Cash Collected THIS MONTH from Delivered Operations)
+  // Matches Golden Reference: a (Cash delivered this month) + o (Debt paid this month)
+  // In V2, we calculate proportional profit based on what was paid THIS month.
+  const realizedRes = db.prepare(`
+    SELECT COALESCE(SUM(
+      CASE 
+        WHEN price > 0 THEN (paid_amount * 1.0 / price) * shop_profit
+        ELSE shop_profit
+      END
+    ), 0) as realizedShopProfit
+    FROM operations
+    WHERE status = 'delivered' 
+      AND (
+        (payment_status = 'cash' AND month_id = ?) OR
+        (paid_in_month_id = ?) OR
+        (payment_status = 'partial' AND COALESCE(paid_in_month_id, month_id) = ?)
+      )
+  `).get(monthId, monthId, monthId) as { realizedShopProfit: number };
+
+  const netShopProfit = Number(realizedRes.realizedShopProfit) || 0;
 
   // 3. Receivables (Customer Debt - All Time)
   const debtRes = db.prepare(`
@@ -47,7 +66,19 @@ export function getDashboardStats(): DashboardStats {
   `).get() as { debtTotal: number };
   const debtTotal = Number(debtRes.debtTotal) || 0;
 
-  // 4. Payables (Technicians - All Time)
+  // 4. Tied Capital (Cost of Delivered Operations in Debt - Current Month)
+  const tiedRes = db.prepare(`
+    SELECT COALESCE(SUM(cost), 0) as tiedCapital
+    FROM operations
+    WHERE status = 'delivered' 
+      AND payment_status != 'cash' 
+      AND (price - COALESCE(paid_amount, 0)) > 0
+      AND COALESCE(delivered_in_month_id, month_id) = ?
+  `).get(monthId) as { tiedCapital: number };
+
+  const tiedCapital = Number(tiedRes.tiedCapital) || 0;
+
+  // 5. Payables (Technicians - All Time)
   const techPayablesRes = db.prepare(`
     SELECT 
       (SELECT COALESCE(SUM(tech_profit), 0) FROM operations WHERE status = 'delivered') -
@@ -89,7 +120,7 @@ export function getDashboardStats(): DashboardStats {
     uncollectedProfit: 0,
     baseCapital,
     availableCapital: cashBox,
-    tiedCapital: Number(profitRes.totalCost) || 0,
+    tiedCapital,
     realizedShopProfit: netShopProfit,
     totalShopWithdrawal: totalShopWithdrawalMonth,
     shopDue: allTimeShopProfit - totalShopWithdrawalAllTime

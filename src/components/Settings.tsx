@@ -381,8 +381,8 @@ export default function Settings() {
   };
 
   const confirmCloseMonth = async () => {
-    if (!newCapital) {
-      await dialog.warning('الرجاء إدخال رأس المال للشهر الجديد قبل التصفية');
+    if (newCapital && isNaN(parseFloat(newCapital))) {
+      await dialog.warning('الرجاء إدخال رقم صحيح لرأس المال');
       return;
     }
     
@@ -392,7 +392,8 @@ export default function Settings() {
     dialog.loading('جاري التصفية وإنشاء ملف الإكسل والنسخة الاحتياطية...');
     
     try {
-      const res = await (window as any).api.closeMonthWithExcel(parseFloat(newCapital));
+      const parsedCapital = newCapital.trim() === '' ? 0 : parseFloat(newCapital);
+      const res = await (window as any).api.closeMonthWithExcel(parsedCapital);
       
       dialog.close();
       
@@ -543,10 +544,10 @@ export default function Settings() {
                 </div>
 
                 <div className="form-group" style={{ marginBottom: 'var(--space-6)' }}>
-                  <label>لبدء شهر جديد، يرجى إدخال رأس المال المخصص له:</label>
+                  <label>لبدء شهر جديد، يرجى إدخال رأس المال المخصص له يدوياً (أو اتركه فارغاً لجعله 0):</label>
                   <input 
                     type="number" 
-                    placeholder="مثال: 5000"
+                    placeholder="رأس المال الجديد (مثال: 0)"
                     min="0"
                     value={newCapital}
                     onChange={e => setNewCapital(e.target.value)}
