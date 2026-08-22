@@ -34,7 +34,7 @@ export function getDashboardStats(): DashboardStats {
       COALESCE(SUM(shop_profit), 0) as shopOperationProfit,
       COALESCE(SUM(tech_profit), 0) as techShare
     FROM operations
-    WHERE status = 'delivered' AND COALESCE(delivered_in_month_id, month_id) = ?
+    WHERE status = 'delivered' AND month_id = ?
   `).get(monthId) as { totalSales: number; totalCost: number; grossProfit: number; shopOperationProfit: number; techShare: number };
 
   // 2.b REALIZED Shop Profit (Cash Collected THIS MONTH from Delivered Operations)
@@ -43,18 +43,15 @@ export function getDashboardStats(): DashboardStats {
   const realizedRes = db.prepare(`
     SELECT COALESCE(SUM(
       CASE 
-        WHEN price > 0 THEN (paid_amount * 1.0 / price) * shop_profit
-        ELSE shop_profit
+        WHEN o.price > 0 THEN (p.amount * 1.0 / o.price) * o.shop_profit
+        ELSE o.shop_profit
       END
     ), 0) as realizedShopProfit
-    FROM operations
-    WHERE status = 'delivered' 
-      AND (
-        (payment_status = 'cash' AND month_id = ?) OR
-        (paid_in_month_id = ?) OR
-        (payment_status = 'partial' AND COALESCE(paid_in_month_id, month_id) = ?)
-      )
-  `).get(monthId, monthId, monthId) as { realizedShopProfit: number };
+    FROM payments p
+    JOIN operations o ON p.operation_id = o.id
+    WHERE o.status = 'delivered' 
+      AND p.month_id = ?
+  `).get(monthId) as { realizedShopProfit: number };
 
   const netShopProfit = Number(realizedRes.realizedShopProfit) || 0;
 
@@ -73,7 +70,7 @@ export function getDashboardStats(): DashboardStats {
     WHERE status = 'delivered' 
       AND payment_status != 'cash' 
       AND (price - COALESCE(paid_amount, 0)) > 0
-      AND COALESCE(delivered_in_month_id, month_id) = ?
+      AND month_id = ?
   `).get(monthId) as { tiedCapital: number };
 
   const tiedCapital = Number(tiedRes.tiedCapital) || 0;
@@ -87,7 +84,7 @@ export function getDashboardStats(): DashboardStats {
   const technicianPayables = Number(techPayablesRes.techPayables) || 0;
 
   // Additional stats
-  const opsCostRes = db.prepare(`SELECT COUNT(id) as c FROM operations WHERE COALESCE(delivered_in_month_id, month_id) = ?`).get(monthId) as { c: number };
+  const opsCostRes = db.prepare(`SELECT COUNT(id) as c FROM operations WHERE month_id = ?`).get(monthId) as { c: number };
   
   // Shop Withdrawals (Current Month - for Dashboard)
   const shopWithResMonth = db.prepare(`SELECT COALESCE(SUM(amount), 0) as w FROM cash_transactions WHERE type = 'SHOP_WITHDRAWAL' AND month_id = ?`).get(monthId) as { w: number };
@@ -143,7 +140,7 @@ export function getTechnicianStats(): TechnicianStats[] {
     const profitRes = db.prepare(`
       SELECT COALESCE(SUM(tech_profit), 0) as totalProfit
       FROM operations
-      WHERE technician_id = ? AND delivered_in_month_id = ?
+      WHERE technician_id = ? AND month_id = ? AND status = 'delivered'
     `).get(tech.id, monthId) as { totalProfit: number };
 
     const unrealizedRes = db.prepare(`

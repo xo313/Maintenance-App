@@ -221,11 +221,12 @@ export function addOperation(op: Partial<Operation>): { success: boolean; data?:
         `).run('CUSTOMER_PAYMENT', paidAmount, op.date || new Date().toLocaleDateString('en-GB'), currentMonth.id, id, 'دفعة مقدمة - عملية #' + id, now);
       }
 
+
       if (cost > 0) {
         db.prepare(`
           INSERT INTO cash_transactions (type, amount, date, month_id, reference_id, description, created_at)
           VALUES (?, ?, ?, ?, ?, ?, ?)
-        `).run('SPARE_PART_COST', cost, op.date || new Date().toLocaleDateString('en-GB'), currentMonth.id, id, 'تكلفة قطع غيار نقداً - عملية #' + id, now);
+        `).run('SPARE_PART_COST', cost, op.date || new Date().toLocaleDateString('en-GB'), currentMonth.id, id, 'تكلفة قطع غيار - عملية #' + id, now);
       }
 
       return id;

@@ -121,8 +121,32 @@ export function initSchema(db: Database.Database): void {
     console.log('[SQLite] Running migration to Schema V3 (Zero Out Current Month Capital)...');
     db.prepare('UPDATE months SET start_capital = 0 WHERE is_closed = 0').run();
     db.prepare('INSERT OR IGNORE INTO schema_migrations (version, applied_at, description) VALUES (?, ?, ?)')
-      .run(CURRENT_SCHEMA_VERSION, new Date().toISOString(), 'Zero out current month start capital');
+      .run(3, new Date().toISOString(), 'Zero out current month start capital');
     console.log('[SQLite] Migration to Schema V3 completed.');
+  }
+
+  const v4Exists = db.prepare('SELECT version FROM schema_migrations WHERE version = 4').get();
+  if (!v4Exists) {
+    console.log('[SQLite] Running migration to Schema V4 (Backfill SPARE_PART_COST)...');
+    db.transaction(() => {
+      db.prepare(`
+        INSERT INTO cash_transactions (type, amount, date, month_id, reference_id, description, created_at)
+        SELECT 
+          'SPARE_PART_COST',
+          o.cost - COALESCE((SELECT SUM(amount) FROM cash_transactions ct WHERE ct.reference_id = o.id AND ct.type = 'SPARE_PART_COST'), 0),
+          o.date,
+          o.month_id,
+          o.id,
+          'تسوية تكلفة قطع الغيار - عملية #' || o.id,
+          o.date
+        FROM operations o
+        WHERE o.cost - COALESCE((SELECT SUM(amount) FROM cash_transactions ct WHERE ct.reference_id = o.id AND ct.type = 'SPARE_PART_COST'), 0) > 0
+      `).run();
+      
+      db.prepare('INSERT OR IGNORE INTO schema_migrations (version, applied_at, description) VALUES (?, ?, ?)')
+        .run(CURRENT_SCHEMA_VERSION, new Date().toISOString(), 'Backfill missing SPARE_PART_COST in cash ledger');
+    })();
+    console.log('[SQLite] Migration to Schema V4 completed.');
   }
 }
 
