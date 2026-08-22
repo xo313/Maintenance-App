@@ -21,6 +21,9 @@ export default function Settings() {
   const [isClosing, setIsClosing] = useState(false);
   const [stats, setStats] = useState<DashboardStats | null>(null);
 
+  const [isEditingCapital, setIsEditingCapital] = useState(false);
+  const [editCapitalValue, setEditCapitalValue] = useState('');
+
   useEffect(() => {
     if (activeTab === 'monthly_closing') {
       (window as any).api.getDashboardStats().then((data: DashboardStats) => setStats(data));
@@ -411,9 +414,26 @@ export default function Settings() {
       }
     } catch (err: any) {
       dialog.close();
-      await dialog.error('حدث خطأ غير متوقع: ' + err.message);
+      console.error(err);
+      await dialog.error('حدث خطأ أثناء حفظ الملف: ' + err.message);
     } finally {
       setIsClosing(false);
+    }
+  };
+
+  const handleUpdateCapital = async () => {
+    if (isNaN(parseFloat(editCapitalValue))) {
+      await dialog.warning('الرجاء إدخال رقم صحيح');
+      return;
+    }
+    const res = await (window as any).api.updateMonthCapital(parseFloat(editCapitalValue));
+    if (res.success) {
+      await dialog.success('تم تحديث رأس المال بنجاح');
+      setIsEditingCapital(false);
+      const data = await (window as any).api.getDashboardStats();
+      setStats(data);
+    } else {
+      await dialog.error('حدث خطأ أثناء التحديث');
     }
   };
 
@@ -513,7 +533,23 @@ export default function Settings() {
                 <div className="glass" style={{ padding: 'var(--space-5)', marginBottom: 'var(--space-6)' }}>
                   <div className="flex-between" style={{ marginBottom: 'var(--space-2)' }}>
                     <span className="caption">رأس المال الأساسي المخصص:</span>
-                    <span style={{ fontWeight: 'bold', color: 'var(--text)' }}>{stats.baseCapital.toFixed(2)}</span>
+                    {isEditingCapital ? (
+                      <div style={{ display: 'flex', gap: '0.5rem' }}>
+                        <input 
+                          type="number" 
+                          style={{ width: '100px', padding: '0.2rem' }} 
+                          value={editCapitalValue} 
+                          onChange={(e) => setEditCapitalValue(e.target.value)} 
+                        />
+                        <button className="btn btn-primary" style={{ padding: '0.2rem 0.5rem' }} onClick={handleUpdateCapital}>حفظ</button>
+                        <button className="btn btn-secondary" style={{ padding: '0.2rem 0.5rem' }} onClick={() => setIsEditingCapital(false)}>إلغاء</button>
+                      </div>
+                    ) : (
+                      <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                        <span style={{ fontWeight: 'bold', color: 'var(--text)' }}>{stats.baseCapital.toFixed(2)}</span>
+                        <button className="btn btn-secondary" style={{ padding: '0.2rem 0.5rem', fontSize: '0.8rem' }} onClick={() => { setEditCapitalValue(stats.baseCapital.toString()); setIsEditingCapital(true); }}>تعديل</button>
+                      </div>
+                    )}
                   </div>
                   <div className="flex-between" style={{ marginBottom: 'var(--space-2)' }}>
                     <span className="caption">رأس المال المعلق (ديون السوق):</span>

@@ -52,6 +52,7 @@ contextBridge.exposeInMainWorld('api', {
   getTechnicianStats: () => ipcRenderer.invoke('get-technician-stats'),
   closeMonth: (newCapital: number) => ipcRenderer.invoke('close-month', newCapital),
   closeMonthWithExcel: (newCapital: number) => ipcRenderer.invoke('close-month-with-excel', newCapital),
+  updateMonthCapital: (newCapital: number) => ipcRenderer.invoke('update-month-capital', newCapital),
 
   // Cash Ledger
   getCashTransactions: () => ipcRenderer.invoke('get-cash-transactions'),

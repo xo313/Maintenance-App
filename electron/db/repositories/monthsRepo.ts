@@ -39,6 +39,18 @@ export function getNextMonthId(): number {
   return (res && res.maxId) ? res.maxId + 1 : 1;
 }
 
+export function updateCurrentMonthCapital(newCapital: number): { success: boolean; reason?: string } {
+  const db = getDB();
+  const currentMonth = getCurrentMonth();
+  try {
+    db.prepare('UPDATE months SET start_capital = ? WHERE id = ?').run(Number(newCapital) || 0, currentMonth.id);
+    return { success: true };
+  } catch (err: any) {
+    console.error('[MonthsRepo] Update capital failed:', err);
+    return { success: false, reason: err?.message || 'UPDATE_CAPITAL_FAILED' };
+  }
+}
+
 export function closeMonth(newCapital: number): { success: boolean; newMonth?: Month; reason?: string } {
   const db = getDB();
   const currentMonth = getCurrentMonth();

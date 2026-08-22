@@ -555,6 +555,11 @@ function setupIPC() {
     }
   });
 
+  // Update Current Month Capital
+  ipcMain.handle('update-month-capital', (_, newCapital) => {
+    return monthsRepo.updateCurrentMonthCapital(newCapital);
+  });
+
   // Close Month with Excel
   ipcMain.handle('close-month-with-excel', async (_, newCapital) => {
     try {
